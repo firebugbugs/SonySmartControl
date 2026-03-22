@@ -2,6 +2,10 @@
 
 本仓库在 **Windows x64** 上基于索尼官方 **Camera Remote SDK（CrSDK）** 实现桌面端实时取景、遥控拍摄与常用拍摄参数同步。托管 UI 使用 **Avalonia 11**，原生桥接层将 CrSDK C++ API 封装为可供 C# 调用的 `SonyCrBridge.dll`。
 
+## 界面预览
+
+![索尼实时视窗主界面](Assets/Home.jpg)
+
 ---
 
 ## 兼容性与验证范围（重要）
