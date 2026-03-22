@@ -1,4 +1,4 @@
-# SonyDemo — 索尼相机遥控实时视窗（Windows）
+# SonySmartControl — 索尼相机遥控实时视窗（Windows）
 
 本仓库在 **Windows x64** 上基于索尼官方 **Camera Remote SDK（CrSDK）** 实现桌面端实时取景、遥控拍摄与常用拍摄参数同步。托管 UI 使用 **Avalonia 11**，原生桥接层将 CrSDK C++ API 封装为可供 C# 调用的 `SonyCrBridge.dll`。
 

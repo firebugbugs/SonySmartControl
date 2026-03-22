@@ -22,10 +22,21 @@ public static class DiskImagePreviewLoader
         if (scale is <= 0 or > 1)
             scale = UiDisplayScale;
 
+        Bitmap? full = null;
         try
         {
             using var stream = File.OpenRead(path);
-            using var full = new Bitmap(stream);
+            full = new Bitmap(stream);
+        }
+        catch
+        {
+            full = EmbeddedJpegPreviewLoader.TryDecodeLargestEmbeddedJpeg(path);
+            if (full == null)
+                return null;
+        }
+
+        try
+        {
             var pw = full.PixelSize.Width;
             var ph = full.PixelSize.Height;
             if (pw <= 0 || ph <= 0)
@@ -33,27 +44,13 @@ public static class DiskImagePreviewLoader
 
             var w = Math.Max(1, (int)Math.Round(pw * scale));
             var h = Math.Max(1, (int)Math.Round(ph * scale));
-            return full.CreateScaledBitmap(new PixelSize(w, h), BitmapInterpolationMode.LowQuality);
+            // 先缩小再按 EXIF 转正：避免对全尺寸 RenderTargetBitmap 做 ResizeBitmap（易失败），并降低内存。
+            var scaled = full.CreateScaledBitmap(new PixelSize(w, h), BitmapInterpolationMode.LowQuality);
+            return ExifOrientationNormalizer.Apply(scaled, ExifOrientationNormalizer.TryReadOrientation(path));
         }
-        catch
+        finally
         {
-            var embedded = EmbeddedJpegPreviewLoader.TryDecodeLargestEmbeddedJpeg(path);
-            if (embedded == null)
-                return null;
-            try
-            {
-                var pw = embedded.PixelSize.Width;
-                var ph = embedded.PixelSize.Height;
-                if (pw <= 0 || ph <= 0)
-                    return null;
-                var w = Math.Max(1, (int)Math.Round(pw * scale));
-                var h = Math.Max(1, (int)Math.Round(ph * scale));
-                return embedded.CreateScaledBitmap(new PixelSize(w, h), BitmapInterpolationMode.LowQuality);
-            }
-            finally
-            {
-                embedded.Dispose();
-            }
+            full.Dispose();
         }
     }
 
@@ -76,15 +73,21 @@ public static class DiskImagePreviewLoader
     {
         if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
             return null;
+
+        Bitmap? decoded = null;
         try
         {
             using var stream = File.OpenRead(path);
-            return new Bitmap(stream);
+            decoded = new Bitmap(stream);
         }
         catch
         {
-            return EmbeddedJpegPreviewLoader.TryDecodeLargestEmbeddedJpeg(path);
+            decoded = EmbeddedJpegPreviewLoader.TryDecodeLargestEmbeddedJpeg(path);
+            if (decoded == null)
+                return null;
         }
+
+        return ExifOrientationNormalizer.Apply(decoded, ExifOrientationNormalizer.TryReadOrientation(path));
     }
 
     public static async Task<Bitmap?> LoadFullAsync(string path, CancellationToken ct = default)

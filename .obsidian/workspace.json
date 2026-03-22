@@ -186,6 +186,9 @@
   "active": "549e3c588cfed78b",
   "lastOpenFiles": [
     "Assets/Home.jpg",
+    "Assets/PixPin_2026-03-23_05-58-04.jpg",
+    "SonySmartControl/Helpers/ExifOrientationNormalizer.cs",
+    "LICENSE",
     "g/SonySmartControl",
     "g",
     "新建文件夹",
@@ -194,8 +197,6 @@
     "SonyCrBridge/build/x64/Release/ALL_BUILD/ALL_BUILD.tlog/CustomBuild.read.1.tlog",
     "SonyCrBridge/build/x64/Release/ALL_BUILD/ALL_BUILD.tlog/CustomBuild.write.1.tlog",
     "SonyCrBridge/build/x64/Release/ALL_BUILD/ALL_BUILD.tlog/CustomBuild.command.1.tlog",
-    "SonyCrBridge/build/x64/Release/ALL_BUILD/ALL_BUILD.tlog/ALL_BUILD.lastbuildstate",
-    "SonyCrBridge/build/x64/Release/ALL_BUILD/ALL_BUILD.tlog",
     "ReadMe.md"
   ]
 }
