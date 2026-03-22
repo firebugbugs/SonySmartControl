@@ -1,0 +1,15 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="SonySmartControl.Controls.FilmstripPhotosHost"
+             Focusable="False">
+    <ScrollViewer x:Name="ScrollHost"
+                  HorizontalScrollBarVisibility="Auto"
+                  VerticalScrollBarVisibility="Disabled"
+                  Focusable="False"
+                  MaxHeight="144">
+        <StackPanel x:Name="ItemsPanelHost"
+                    Orientation="Horizontal"
+                    Spacing="10"
+                    Focusable="False"/>
+    </ScrollViewer>
+</UserControl>

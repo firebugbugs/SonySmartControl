@@ -1,0 +1,83 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:models="using:SonySmartControl.Models"
+             xmlns:controls="using:SonySmartControl.Controls"
+             x:Class="SonySmartControl.Controls.FilmstripPhotoItem"
+             x:Name="Root"
+             x:DataType="models:RecentPhotoEntry"
+             Focusable="False"
+             Width="126"
+             Height="96">
+    <UserControl.Styles>
+        <Style Selector="Button.filmstrip-info-btn">
+            <Setter Property="Width" Value="22"/>
+            <Setter Property="Height" Value="22"/>
+            <Setter Property="MinWidth" Value="0"/>
+            <Setter Property="MinHeight" Value="0"/>
+            <Setter Property="Padding" Value="0"/>
+            <!-- 与 1.5× 缩放后的缩略图边距一致 -->
+            <Setter Property="Margin" Value="0,12,12,0"/>
+            <Setter Property="HorizontalAlignment" Value="Right"/>
+            <Setter Property="VerticalAlignment" Value="Top"/>
+            <Setter Property="ZIndex" Value="2"/>
+            <Setter Property="Cursor" Value="Help"/>
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="CornerRadius" Value="11"/>
+            <Setter Property="Background" Value="#CC1E2229"/>
+            <Setter Property="BorderBrush" Value="#99FFFFFF"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Foreground" Value="#F0F4FA"/>
+            <Setter Property="Opacity" Value="0.92"/>
+        </Style>
+        <Style Selector="Button.filmstrip-info-btn:pointerover">
+            <Setter Property="Opacity" Value="1"/>
+            <Setter Property="Background" Value="#E01E2229"/>
+        </Style>
+    </UserControl.Styles>
+    <Border x:Name="HitArea"
+            Background="Transparent"
+            Cursor="Hand"
+            PointerReleased="HitArea_OnPointerReleased">
+        <!-- 相对 84×64 按 1.5× 缩放：126×96；缩略图框保持 72:52 → 108×78 -->
+        <Grid Width="126" Height="96">
+            <Border Width="108"
+                    Height="78"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    CornerRadius="9"
+                    ClipToBounds="True"
+                    BorderBrush="#B8BFC9"
+                    BorderThickness="1"
+                    Background="#E4E7EC">
+                <Image Source="{Binding Thumbnail}"
+                       Stretch="UniformToFill"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"/>
+            </Border>
+            <Border ZIndex="1"
+                    Width="123"
+                    Height="90"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    CornerRadius="15"
+                    BorderBrush="#C5CDD6"
+                    BorderThickness="3"
+                    Background="Transparent"
+                    IsHitTestVisible="False"
+                    IsVisible="{Binding IsFilmstripSelected}"/>
+            <Button x:Name="InfoButton"
+                    Classes="filmstrip-info-btn"
+                    ToolTip.ShowDelay="0"
+                    PointerReleased="InfoButton_OnPointerReleased">
+                <ToolTip.Tip>
+                    <controls:FilmstripPhotoInfoTip DataContext="{Binding #Root.DataContext}"/>
+                </ToolTip.Tip>
+                <TextBlock Text="i"
+                           FontSize="14"
+                           FontWeight="SemiBold"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"/>
+            </Button>
+        </Grid>
+    </Border>
+</UserControl>

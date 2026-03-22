@@ -1,0 +1,15 @@
+.splitter {
+    background-color: #2980b9;
+    cursor: col-resize;
+    width: 10px;
+}
+
+@media screen and (max-width:768px){
+    .splitter {
+        display: none;
+    }
+}
+
+.splitter:hover{
+    opacity: 0.6;
+}

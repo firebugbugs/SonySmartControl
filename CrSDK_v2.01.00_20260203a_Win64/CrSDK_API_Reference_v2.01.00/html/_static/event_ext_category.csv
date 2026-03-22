@@ -1,0 +1,21 @@
+event code	callback api	event factor
+CrWarningExt_Unknown	OnWarning	dummy event code
+CrWarningExt_AFStatus	OnWarningExt	:ref:`SDIE_AFStatus callback<SDIE_AFStatus>`
+CrWarningExt_OperationResults	OnWarningExt	:ref:`SDIE_OperationResults callback<SDIE_OperationResults>`
+CrWarningExt_OperationInvalid	OnWarningExt	:ref:`SendCommand callback<cb-send-command>`
+CrWarningExt_ControlPTZFResult	OnWarningExt	:ref:`ControlPTZF callback<cb-control-ptzf>`
+CrWarningExt_PresetPTZFClear	OnWarningExt	:ref:`PresetPTZFClear callback<cb-preset-ptzf-clear>`
+CrWarningExt_PresetPTZFSet	OnWarningExt	:ref:`PresetPTZFSet callback<cb-preset-ptzf-set>`
+CrWarningExt_PresetPTZFEvent	OnWarningExt	:ref:`SDIE_PresetPTZFEvent callback<SDIE_PresetPTZFEvent>`
+CrWarningExt_RequestTimeZoneSetting	OnWarningExt	:ref:`RequestTimeZoneSetting callback<cb-request-timezone-setting>`
+CrWarningExt_SetTimeZoneSetting	OnWarningExt	:ref:`SetTimeZoneSetting callback<cb-set-timezone-setting>`
+CrWarningExt_ExecuteEframing	OnWarningExt	:ref:`ExecuteEframing,UpdateEframingArea callback<cb-Eframing>`
+CrWarningExt_RequestStreamSettingList	OnWarningExt	:ref:`RequestStreamSettingList callback<cb-request-stream-setting-list>`
+CrWarningExt_SetStreamSettingList	OnWarningExt	:ref:`SetStreamSettingList callback<cb-set-stream-setting-list>`
+CrWarningExt_DeleteContent	OnWarningExt	:ref:`DeleteRemoteTransferContentsFile callback<cb-delete-remote-transfer-contents-file>`
+CrWarningExt_UploadSceneFile	OnWarningExt	:ref:`UploadSceneFile callback<cb-UploadSceneFile>`
+CrWarningExt_DownloadSceneFile	OnWarningExt	:ref:`DownloadSceneFile callback<cb-downloadscenefile>`
+CrWarningExt_UploadCustomGridLineFile	OnWarningExt	:ref:`UploadCustomGridLineFile callback<cb-upload-custom-grid-line-file>`
+CrWarningExt_ControlGeneralSettingFile	OnWarningExt	:ref:`ControlGeneralSettingFile callback<cb-control-general-setting-file>`
+CrWarningExt_RequestControlGeneralSettingResultFile	OnWarningExt	:ref:`RequestControlGeneralSettingResultFile callback<cb-request-control-general-setting-result-file>`
+CrWarningExt_RequestOperation	OnWarningExt	:ref:`RequestOperation callback<cb-request-operation>`

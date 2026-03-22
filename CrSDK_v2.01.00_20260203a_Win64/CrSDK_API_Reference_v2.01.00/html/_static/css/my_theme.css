@@ -1,0 +1,65 @@
+@import url("theme.css");
+
+.wy-nav-content {
+    max-width: none;
+}
+
+.flex-container {
+    display: flex;
+}
+
+/* adds scrollbar to sidenav */
+.wy-nav-side {
+    position: fixed;
+    display: block;
+    width: auto;
+    padding-bottom: 0em;
+    overflow: hidden;
+    min-height: 100%;
+    color: #9b9b9b;
+    background: #343131;
+    z-index: 200;
+}
+
+.wy-side-scroll {
+    display: block;
+    width: 300px;
+    height: 100vh;
+    overflow-x: auto;
+    overflow-y: auto;
+}
+
+.wy-menu-vertical {
+    width: -webkit-fill-available;
+    width: -moz-available;
+    width: stretch;
+
+    min-width: 300px;
+}
+
+.wy-menu-vertical li.current {
+    width: fit-content;
+}
+
+@media screen and (max-width:768px) {
+    .wy-nav-content-wrap shift .wy-menu-vertical li.current {
+        width: 0px;
+    }
+}
+
+.rst-content .line-block {
+    margin-bottom: 0px;
+}
+
+@media screen and (max-width:768px) {
+    .wy-nav-top {
+        position: sticky;  /* 位置を固定する */
+        top: 0;  /* 固定する位置を指定 */
+        left: 0;  /* 固定する位置を指定 */
+        z-index: 1000;
+    }
+}
+
+.wy-table-responsive {
+    max-height: 80vh;
+}

@@ -1,0 +1,26 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="SonySmartControl.Controls.PhotoPanZoomViewer"
+             ClipToBounds="True"
+             Background="#151518"
+             Focusable="False"
+             SizeChanged="PhotoPanZoomViewer_OnSizeChanged">
+    <Border x:Name="Viewport"
+            HorizontalAlignment="Stretch"
+            VerticalAlignment="Stretch"
+            ClipToBounds="True"
+            Background="Transparent"
+            Cursor="SizeAll"
+            PointerWheelChanged="Viewport_OnPointerWheelChanged"
+            PointerPressed="Viewport_OnPointerPressed"
+            PointerMoved="Viewport_OnPointerMoved"
+            PointerReleased="Viewport_OnPointerReleased"
+            PointerCaptureLost="Viewport_OnPointerCaptureLost">
+        <Image x:Name="PART_Image"
+               Stretch="None"
+               HorizontalAlignment="Left"
+               VerticalAlignment="Top"
+               RenderTransformOrigin="0,0"
+               IsHitTestVisible="False"/>
+    </Border>
+</UserControl>

@@ -1,0 +1,79 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <OutputType>WinExe</OutputType>
+        <TargetFramework>net10.0</TargetFramework>
+        <ApplicationIcon>Assets\cheems.ico</ApplicationIcon>
+        <!-- 需 .NET 10 SDK 编译；若仍用 VS2022 + 仅 SDK 9 会报 NETSDK1209，请安装 .NET 10 SDK 或用 Rider 自带 SDK。运行须：.NET 10 Desktop Runtime x64 -->
+        <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+        <RollForward>LatestPatch</RollForward>
+        <!-- 官方包内请指向含 app\CRSDK 与 external\crsdk 的目录（v2 为 RemoteCli）。默认：解决方案下的 CrSDK_v2.01.00_20260203a_Win64\RemoteCli -->
+        <!-- csproj 在 SonySmartControl\SonySmartControl\ 下，向上一级即仓库根 SonySmartControl\ -->
+        <SonyCrSdkRoot Condition="'$(SonyCrSdkRoot)' == ''">$(MSBuildThisFileDirectory)..\CrSDK_v2.01.00_20260203a_Win64\RemoteCli</SonyCrSdkRoot>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <ApplicationManifest>app.manifest</ApplicationManifest>
+        <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <Folder Include="Models\"/>
+        <!-- 勿再写 AvaloniaResource Include="Assets\**"：SDK 已通过 AvaloniaXaml(**\*.axaml) 收录，重复会导致运行时「same key /Assets/...」崩溃 -->
+        <AvaloniaResource Include="Assets\cheems.ico"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Avalonia" Version="11.3.10"/>
+        <PackageReference Include="Avalonia.Desktop" Version="11.3.10"/>
+        <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.10"/>
+        <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.10"/>
+        <!--Condition below is needed to remove Avalonia.Diagnostics package from build output in Release configuration.-->
+        <PackageReference Include="Avalonia.Diagnostics" Version="11.3.10">
+            <IncludeAssets Condition="'$(Configuration)' != 'Debug'">None</IncludeAssets>
+            <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
+        </PackageReference>
+        <PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.1"/>
+        <PackageReference Include="MetadataExtractor" Version="2.8.1"/>
+    </ItemGroup>
+
+    <Target Name="WarnIfCrSdkLayoutMissing" BeforeTargets="Build">
+        <Warning
+            Text="未找到 $(SonyCrSdkRoot)\external\crsdk\Cr_Core.dll：请把官方 RemoteCli 解压到仓库根目录下的 CrSDK_* 文件夹，或在编译时传入 /p:SonyCrSdkRoot=... 。否则运行时无法加载 Cr_Core。"
+            Condition="!Exists('$(SonyCrSdkRoot)\external\crsdk\Cr_Core.dll')"/>
+    </Target>
+
+    <!-- 仅复制 CrSDK 运行所需 DLL（与官方 RemoteCli 示例一致），不复制 OpenCV 等 -->
+    <Target Name="CopySonyCrSdkNative" AfterTargets="Build"
+            Condition="Exists('$(SonyCrSdkRoot)\external\crsdk\Cr_Core.dll')">
+        <ItemGroup>
+            <_CrSdkRootDlls Include="$(SonyCrSdkRoot)\external\crsdk\Cr_Core.dll"/>
+            <_CrSdkRootDlls Include="$(SonyCrSdkRoot)\external\crsdk\monitor_protocol.dll"/>
+            <_CrSdkRootDlls Include="$(SonyCrSdkRoot)\external\crsdk\monitor_protocol_pf.dll"/>
+            <_CrSdkAdapterDlls Include="$(SonyCrSdkRoot)\external\crsdk\CrAdapter\*.dll"/>
+        </ItemGroup>
+        <Copy SourceFiles="@(_CrSdkRootDlls)" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true"/>
+        <Copy SourceFiles="@(_CrSdkAdapterDlls)" DestinationFolder="$(OutputPath)CrAdapter" SkipUnchangedFiles="true"/>
+    </Target>
+
+    <!-- 在「主输出复制」之后拷桥接 DLL，避免 F5 时输出目录里还没有 SonyCrBridge.dll。优先级：ThirdParty > build\Release > ... -->
+    <Target Name="CopySonyCrBridgeDllToOutput" AfterTargets="CopyFilesToOutputDirectory">
+        <PropertyGroup>
+            <_SonyCrBridgeSrc />
+            <!-- 优先使用仓库内 SonyCrBridge 工程输出（与 build-windows.ps1 一致），避免误用旧 ThirdParty 或已失效的 native\ 路径 -->
+            <_SonyCrBridgeSrc Condition="'$(_SonyCrBridgeSrc)' == '' and Exists('$(MSBuildThisFileDirectory)..\..\SonyCrBridge\build\Release\SonyCrBridge.dll')">$(MSBuildThisFileDirectory)..\..\SonyCrBridge\build\Release\SonyCrBridge.dll</_SonyCrBridgeSrc>
+            <_SonyCrBridgeSrc Condition="'$(_SonyCrBridgeSrc)' == '' and Exists('$(MSBuildThisFileDirectory)ThirdParty\Native\SonyCrBridge.dll')">$(MSBuildThisFileDirectory)ThirdParty\Native\SonyCrBridge.dll</_SonyCrBridgeSrc>
+            <_SonyCrBridgeSrc Condition="'$(_SonyCrBridgeSrc)' == '' and Exists('$(MSBuildThisFileDirectory)..\native\SonyCrBridge\build\Release\SonyCrBridge.dll')">$(MSBuildThisFileDirectory)..\native\SonyCrBridge\build\Release\SonyCrBridge.dll</_SonyCrBridgeSrc>
+            <_SonyCrBridgeSrc Condition="'$(_SonyCrBridgeSrc)' == '' and Exists('$(MSBuildThisFileDirectory)..\native\SonyCrBridge\build\Debug\SonyCrBridge.dll')">$(MSBuildThisFileDirectory)..\native\SonyCrBridge\build\Debug\SonyCrBridge.dll</_SonyCrBridgeSrc>
+            <_SonyCrBridgeSrc Condition="'$(_SonyCrBridgeSrc)' == '' and Exists('$(MSBuildThisFileDirectory)..\native\SonyCrBridge\out\build\x64-Release\SonyCrBridge.dll')">$(MSBuildThisFileDirectory)..\native\SonyCrBridge\out\build\x64-Release\SonyCrBridge.dll</_SonyCrBridgeSrc>
+            <_SonyCrBridgeSrc Condition="'$(_SonyCrBridgeSrc)' == '' and Exists('$(MSBuildThisFileDirectory)..\native\SonyCrBridge\out\build\x64-Debug\SonyCrBridge.dll')">$(MSBuildThisFileDirectory)..\native\SonyCrBridge\out\build\x64-Debug\SonyCrBridge.dll</_SonyCrBridgeSrc>
+            <_SonyCrBridgeSrc Condition="'$(_SonyCrBridgeSrc)' == '' and Exists('$(MSBuildThisFileDirectory)..\native\SonyCrBridge\build\SonyCrBridge.dll')">$(MSBuildThisFileDirectory)..\native\SonyCrBridge\build\SonyCrBridge.dll</_SonyCrBridgeSrc>
+        </PropertyGroup>
+        <Copy SourceFiles="$(_SonyCrBridgeSrc)" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="false"
+              Condition="'$(_SonyCrBridgeSrc)' != ''"/>
+    </Target>
+
+    <Target Name="WarnIfNoSonyCrBridgeInOutput" AfterTargets="CopySonyCrBridgeDllToOutput">
+        <Warning
+            Text="未找到 $(OutputPath)SonyCrBridge.dll：请先编译 native\SonyCrBridge（执行 build-windows.ps1），再重新生成本工程。"
+            Condition="!Exists('$(OutputPath)SonyCrBridge.dll')"/>
+    </Target>
+</Project>

@@ -1,0 +1,58 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- 自定义标题栏按钮：无 Fluent 窗口按钮，扁平简约 -->
+    <Style Selector="Button.chrome-caption-btn">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Padding" Value="0"/>
+        <Setter Property="Width" Value="44"/>
+        <Setter Property="Height" Value="32"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="CornerRadius" Value="6"/>
+        <Setter Property="Foreground" Value="#5C6370"/>
+    </Style>
+    <Style Selector="Button.chrome-caption-btn:pointerover">
+        <Setter Property="Background" Value="#E8EAEF"/>
+    </Style>
+    <Style Selector="Button.chrome-caption-btn:pressed">
+        <Setter Property="Background" Value="#DDE0E8"/>
+    </Style>
+    <Style Selector="Button.chrome-caption-close">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Padding" Value="0"/>
+        <Setter Property="Width" Value="44"/>
+        <Setter Property="Height" Value="32"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="CornerRadius" Value="6"/>
+        <Setter Property="Foreground" Value="#5C6370"/>
+    </Style>
+    <Style Selector="Button.chrome-caption-close:pointerover">
+        <Setter Property="Background" Value="#E81123"/>
+        <Setter Property="Foreground" Value="#FFFFFF"/>
+    </Style>
+    <Style Selector="Button.chrome-caption-close:pressed">
+        <Setter Property="Background" Value="#C50F1F"/>
+        <Setter Property="Foreground" Value="#FFFFFF"/>
+    </Style>
+
+    <Style Selector="Button.chrome-text">
+        <Setter Property="Background" Value="#FFFFFF"/>
+        <Setter Property="BorderBrush" Value="#D8DCE5"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Padding" Value="14,8"/>
+        <Setter Property="CornerRadius" Value="8"/>
+        <Setter Property="Foreground" Value="#2B303B"/>
+        <Setter Property="FontSize" Value="13"/>
+    </Style>
+    <Style Selector="Button.chrome-text:pointerover">
+        <Setter Property="Background" Value="#F3F5F9"/>
+        <Setter Property="BorderBrush" Value="#C5CAD6"/>
+    </Style>
+    <Style Selector="Button.chrome-text:pressed">
+        <Setter Property="Background" Value="#E8EBF2"/>
+    </Style>
+    <Style Selector="Button.chrome-text:disabled">
+        <Setter Property="Opacity" Value="0.45"/>
+    </Style>
+</Styles>

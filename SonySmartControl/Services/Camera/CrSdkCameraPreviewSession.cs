@@ -1,0 +1,312 @@
+using System.IO;
+using Avalonia.Media.Imaging;
+using SonySmartControl.Interop;
+
+namespace SonySmartControl.Services.Camera;
+
+/// <summary>
+/// 通过 <c>SonyCrBridge.dll</c> 连接相机并循环拉取 Live View JPEG，解码为 <see cref="Bitmap"/>。
+/// 需先将桥接 DLL 与 Cr_Core / CrAdapter 复制到输出目录，并用 CMake 以 <c>SONY_CR_BRIDGE_STUB=OFF</c> 链接真实 CrSDK。
+/// </summary>
+public sealed class CrSdkCameraPreviewSession : ICameraPreviewSession
+{
+    private const int InitialJpegBufferBytes = 16 * 1024 * 1024;
+
+    private readonly object _gate = new();
+    private bool _sdkConnected;
+    private CancellationTokenSource? _cts;
+    private Task? _loopTask;
+
+    public event EventHandler<Bitmap>? FrameReceived;
+
+    public Task ConnectAsync(CancellationToken cancellationToken = default) =>
+        Task.Run(
+            () =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                lock (_gate)
+                {
+                    if (_sdkConnected)
+                        return;
+
+                    try
+                    {
+                        var st = SonyCrBridgeNative.SonyCr_Init();
+                        if (st != (int)SonyCrStatus.Ok)
+                            throw CrEx(st, "SonyCr_Init");
+
+                        st = SonyCrBridgeNative.SonyCr_EnumCameraDevicesRefresh();
+                        if (st != (int)SonyCrStatus.Ok)
+                            throw CrEx(st, "SonyCr_EnumCameraDevicesRefresh");
+
+                        st = SonyCrBridgeNative.SonyCr_GetCameraDeviceCount(out var count);
+                        if (st != (int)SonyCrStatus.Ok)
+                            throw CrEx(st, "SonyCr_GetCameraDeviceCount");
+
+                        if (count < 1)
+                            throw new InvalidOperationException("未检测到相机：请 USB/网线连接并设为「遥控拍摄」后重试。");
+
+                        st = SonyCrBridgeNative.SonyCr_ConnectRemoteByIndex(0);
+                        if (st != (int)SonyCrStatus.Ok)
+                            throw CrEx(st, "SonyCr_ConnectRemoteByIndex(0)");
+
+                        _sdkConnected = true;
+                    }
+                    catch (DllNotFoundException ex)
+                    {
+                        var baseDir = AppContext.BaseDirectory;
+                        var hint = $" 运行时目录: {baseDir}（请确认 SonyCrBridge.dll、Cr_Core.dll 与此 exe 同目录。）";
+                        throw new InvalidOperationException(
+                            "缺少 SonyCrBridge.dll、其依赖 Cr_Core.dll，或 VC++ 运行库。官方 ZIP 里没有桥接 DLL，必须用 C++ 编译生成："
+                            + " 在资源管理器中打开项目下的 native\\SonyCrBridge，用 PowerShell 执行 .\\build-windows.ps1。"
+                            + " 成功后重新执行「生成」SonySmartControl（不要只运行旧输出）。"
+                            + " 另请安装 x64 的 VC++ 可再发行组件：https://aka.ms/vs/17/release/vc_redist.x64.exe 。"
+                            + " 详细: " + ex.Message + hint,
+                            ex);
+                    }
+                }
+            },
+            cancellationToken);
+
+    public Task StartPreviewAsync(CancellationToken cancellationToken = default)
+    {
+        lock (_gate)
+        {
+            if (_loopTask != null)
+                return Task.CompletedTask;
+            if (!_sdkConnected)
+                throw new InvalidOperationException("未连接相机，无法启动预览。");
+
+            _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            var token = _cts.Token;
+            _loopTask = Task.Run(() => LiveViewLoopAsync(token), token);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public async Task DisconnectAsync()
+    {
+        Task? loop;
+        lock (_gate)
+        {
+            loop = _loopTask;
+            _loopTask = null;
+            _cts?.Cancel();
+            _cts?.Dispose();
+            _cts = null;
+        }
+
+        if (loop != null)
+        {
+            try
+            {
+                await loop.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
+
+        SonyCrBridgeNative.TryDisconnect();
+        lock (_gate)
+        {
+            _sdkConnected = false;
+        }
+    }
+
+    public Task RequestTouchAutofocusAsync(double normalizedX, double normalizedY, CancellationToken cancellationToken = default)
+    {
+        return Task.Run(
+            () =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                SonyCrSdk.RemoteTouchAfFromNormalized(normalizedX, normalizedY);
+            },
+            cancellationToken);
+    }
+
+    public Task CancelRemoteTouchOperationAsync(CancellationToken cancellationToken = default) =>
+        Task.Run(
+            () =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                SonyCrSdk.CancelRemoteTouchOperation();
+            },
+            cancellationToken);
+
+    public Task ApplyCameraSaveSettingsAsync(
+        string saveDirectory,
+        string filePrefix,
+        CrSdkFileType fileType,
+        CancellationToken cancellationToken = default)
+    {
+        return Task.Run(
+            () =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!string.IsNullOrWhiteSpace(saveDirectory))
+                    Directory.CreateDirectory(saveDirectory.Trim());
+                SonyCrSdk.ApplyCaptureSaveSettings(saveDirectory, filePrefix, fileType);
+            },
+            cancellationToken);
+    }
+
+    public Task OneShotFocusAsync(CancellationToken cancellationToken = default) =>
+        Task.Run(
+            () =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                SonyCrSdk.HalfPressShutterForAutofocusOnly();
+            },
+            cancellationToken);
+
+    public Task BeginHalfPressFocusAsync(CancellationToken cancellationToken = default) =>
+        Task.Run(
+            () =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                SonyCrSdk.HalfPressShutterS1Press();
+            },
+            cancellationToken);
+
+    public Task EndHalfPressFocusAsync(CancellationToken cancellationToken = default) =>
+        Task.Run(
+            () =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                SonyCrSdk.HalfPressShutterS1Release();
+            },
+            cancellationToken);
+
+    public Task CaptureStillAsync(
+        string saveDirectory,
+        string filePrefix,
+        CrSdkFileType stillFileType,
+        CancellationToken cancellationToken = default) =>
+        Task.Run(
+            () =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                SonyCrSdk.CaptureStill(saveDirectory, filePrefix, stillFileType);
+            },
+            cancellationToken);
+
+    public Task CaptureStillReleaseAfterHalfPressAsync(
+        string saveDirectory,
+        string filePrefix,
+        CrSdkFileType stillFileType,
+        CancellationToken cancellationToken = default) =>
+        Task.Run(
+            () =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                SonyCrSdk.CaptureStillReleaseAfterHalfPress(saveDirectory, filePrefix, stillFileType);
+            },
+            cancellationToken);
+
+    public Task CaptureBurstHoldDownAsync(
+        string saveDirectory,
+        string filePrefix,
+        CrSdkFileType stillFileType,
+        CancellationToken cancellationToken = default) =>
+        Task.Run(
+            () =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                SonyCrSdk.CaptureBurstHoldDown(saveDirectory, filePrefix, stillFileType);
+            },
+            cancellationToken);
+
+    public Task CaptureBurstHoldEndAsync(CancellationToken cancellationToken = default) =>
+        Task.Run(
+            () =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                SonyCrSdk.CaptureBurstHoldEnd();
+            },
+            cancellationToken);
+
+    public string? TryGetShootingStateJson()
+    {
+        lock (_gate)
+        {
+            if (!_sdkConnected)
+                return null;
+        }
+
+        return SonyCrBridgeNative.TryGetShootingStateJsonUtf8();
+    }
+
+    public string? TryGetLiveViewFocusFramesJson()
+    {
+        lock (_gate)
+        {
+            if (!_sdkConnected)
+                return null;
+        }
+
+        return SonyCrBridgeNative.TryGetLiveViewFocusFramesJsonUtf8();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            await DisconnectAsync().ConfigureAwait(false);
+        }
+        catch
+        {
+            // 断开或后台 Live View 循环异常时仍须尽力释放 native，避免向上冒泡导致界面任务崩溃。
+        }
+
+        try
+        {
+            SonyCrBridgeNative.TryReleaseSdk();
+        }
+        catch
+        {
+        }
+    }
+
+    private async Task LiveViewLoopAsync(CancellationToken ct)
+    {
+        var buffer = new byte[InitialJpegBufferBytes];
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                var st = SonyCrBridgeNative.SonyCr_LiveView_GetLastJpeg(buffer, buffer.Length, out var written);
+                if (st == (int)SonyCrStatus.ErrBufferTooSmall)
+                {
+                    buffer = new byte[Math.Min(buffer.Length * 2, 64 * 1024 * 1024)];
+                    continue;
+                }
+
+                if (st == (int)SonyCrStatus.Ok && written > 0)
+                {
+                    using var ms = new MemoryStream(buffer, 0, written, writable: false, publiclyVisible: true);
+                    var bmp = new Bitmap(ms);
+                    FrameReceived?.Invoke(this, bmp);
+                }
+            }
+            catch (Exception)
+            {
+                if (ct.IsCancellationRequested)
+                    break;
+            }
+
+            try
+            {
+                await Task.Delay(33, ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+        }
+    }
+
+    private static Exception CrEx(int st, string step) =>
+        new InvalidOperationException($"{step} 失败: {(SonyCrStatus)st} ({st})");
+}

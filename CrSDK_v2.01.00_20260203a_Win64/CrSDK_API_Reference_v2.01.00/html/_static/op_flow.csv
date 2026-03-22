@@ -1,0 +1,41 @@
+No.	Operation sequence	Sample code
+1	:ref:`Initialize and Release Camera Remote SDK<op-initialize-and-release-camera-remote-sdk>`	:ref:`sample "connect"<sample-connect>`
+2	:ref:`Enumerate Cameras<op-enumerate-cameras>`	:ref:`sample "connect"<sample-connect>`
+3	:ref:`Create a "Camera Object" with information known in advance<op-create-camera-object-with-information-known-in-advance>`	:ref:`sample "CreateCameraObjectInfo"<sample-CreateCameraObjectInfo>`
+4	:ref:`Connect a Camera<op-connect-a-camera>`	:ref:`sample "connect"<sample-connect>`
+5	:ref:`Disconnect a Camera<op-disconnect-a-camera>`	:ref:`sample "connect"<sample-connect>`
+6	:ref:`Changes in Camera Remote SDK connection status<op-changes-in-sdk-connection-status>`	:ref:`sample "connect"<sample-connect>`
+7	:ref:`Connect/Disconnect multiple cameras<op-connect-disconnect-multiple-cameras>`	:ref:`sample "connect to multi-camera"<sample-connectMulti>`
+8	:ref:`Get the Camera Properties<op-get-the-camera-properties>`	:ref:`sample "get/set device property, send command"<sample-getSetDeviceProperty>`
+9	:ref:`Get the Live View Properties<op-get-the-liveview-properties>`	
+10	:ref:`Device Properties and Live View Properties<op-device-properties-and-liveview-properties>`	:ref:`sample "get/set device property, send command"<sample-getSetDeviceProperty>`
+11	:ref:`Change the Camera Properties<op-change-the-camera-properties>`	:ref:`sample "get/set device property, send command"<sample-getSetDeviceProperty>`
+12	:ref:`Send a Control Command<op-send-a-control-command>`	:ref:`sample "get/set device property, send command"<sample-getSetDeviceProperty>`
+13	Send a Control Code	:ref:`sample "get/set device property, send command"<sample-getSetDeviceProperty>`
+14	:ref:`Get a Live View Image<op-get-a-liveview-image>`	"| :ref:`sample 'get Live view and OSD image'<sample-getLiveViewAndOSD>`
+| :ref:`sample 'get Live view and OSD image with http'<sample-getLiveViewAndOSDhttp>`"
+15	:ref:`Capture an Image Sequence<op-capture-an-image-sequence>`	:ref:`sample "AF Shooting"<sample-afShooting>`
+16	:ref:`Change the Store Image Folder and the File Name <op-change-the-store-image-folder-and-the-filename>`	:ref:`sample "connect"<sample-connect>`
+17	:ref:`Get the menu display string<op-get-the-menu-display-string>`	see "execute_xx_displaystringlist" of RemoteCli app.
+18	:ref:`Pull out content stored on media in ContentsTransferMode<op-pull-out-content-stored-on-media-in-contents-transfer-mode>`	:ref:`sample "Pull out content in ContentsTransferMode"<sample-ContentsTransferMode>`
+19	:ref:`Pull out content stored on media in RemoteTransferMode<op-pull-out-content-stored-on-media-in-remote-transfer-mode>`	:ref:`sample "Pull/delete/playback content in RemoteTransferMode"<sample-RemoteTransferMode>`
+20	:ref:`Get the MediaProfile<op-get-the-media-profile>`	:ref:`sample "control FTP Job"<sample-controlFTPJob>`
+21	:ref:`SDK Properties<op-sdk-properties>`	
+22	:ref:`Download and upload setting files<op-download-and-upload-setting-files>`	:ref:`sample "Download and upload setting files"<sample-downloadUploadSettingFile>`
+23	:ref:`Control the FTP Jobs<op-control-the-ftp-jobs>`	:ref:`sample "control FTP Job"<sample-controlFTPJob>`
+24	FTP Server Setting	:ref:`sample "FTPServerSetting"<sample-FTPServerSetting>`
+25	:ref:`Control Monitoring<op-control-monitoring>`	:ref:`sample "control Monitoring"<sample-monitoring>`
+26	:ref:`Memorize Zoom Distance and Focal Distance<op-memorize-zoom-distance-and-focal-distance>`	see "execute_xx_zoom_and_focus_preset" of RemoteCli app.
+27	:ref:`Get OSD(On-Screen Display) Image<op-get-osd-on-screen-display-image>`	"| :ref:`sample 'get Live view and OSD image'<sample-getLiveViewAndOSD>`
+| :ref:`sample 'get Live view and OSD image with http'<sample-getLiveViewAndOSDhttp>`"
+28	:ref:`Movie Playback<op-movie-playback>`	:ref:`sample "Pull/delete/playback content in RemoteTransferMode"<sample-RemoteTransferMode>`
+29	:ref:`Remote Firmware Update<op-remote-firmware-update>`	see "xx_firmware" of RemoteCli app.
+30	:ref:`Lens information and Focus position <op-how-to-use-lens-information>`	:ref:`sample "get LensInformation"<sample-getLensInformation>`
+31	:ref:`Control Pan/Tilt<op-control-pan-tilt>`	see "control_ptzf_xx" of RemoteCli app.
+32	:ref:`Create/Clear Preset PTZF<op-create-clear-ptzf-preset>`	see "xx_ptzf_preset" of RemoteCli app.
+33	:ref:`Set/Get the TimeZone Setting<op-timezone-setting>`	see "xx_timezone_setting" of RemoteCli app.
+34	:ref:`Delete Contents from Media by Contents Transfer with remote control mode<op-delete-contents-remote-transfer>`	:ref:`sample "Pull/delete/playback content in RemoteTransferMode"<sample-RemoteTransferMode>`
+35	upload CustomGridLine	:ref:`sample "upload CustomGridLine"<sample-CustomGridLine>`
+36	:ref:`Set Eframing<op-set-eframing>`	:ref:`sample "set Eframing"<sample-Eframing>`
+37	Request Operation	:ref:`sample "Request Operation"<sample-requestOperation>`
+38	:ref:`PostView image transfer to RAM<op_pull_postview_image>`	:ref:`sample "Pull/delete/playback content in RemoteTransferMode"<sample-RemoteTransferMode>`

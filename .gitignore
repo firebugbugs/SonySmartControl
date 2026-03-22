@@ -1,0 +1,53 @@
+# 忽略Visual Studio临时文件和用户特定文件
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Aa]nyCPU/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+ 
+# 忽略用户特定文件
+*.user
+*.suo
+*.userprefs
+ 
+# 忽略NuGet Packages
+packages/*
+ 
+# 忽略ReSharper和其他第三方工具生成的文件
+_ReSharper*/
+*.ReSharper
+*.DotSettings
+ 
+# 忽略所有.vs文件夹
+.vs/
+ 
+# 忽略所有的NUPKG文件 (NuGet Package Files)
+*.nupkg
+ 
+# 忽略建立脚本自动创建的文件
+Build/
+ 
+# 忽略日志文件
+*.log
+ 
+# 忽略从旧版本Visual Studio版本控制升级的项目文件
+*.csproj.user
+*.vbproj.user
+*.vcxproj.user
+*.vcxproj.filters
+ 
+# 忽略本地安全设置（如ASP.NET应用程序的Web.config文件中的加密密钥）
+*.config
+ 
+# 忽略所有的MSBuild二进制日志文件
+*.binlog
+ 
+# 忽略GUID文件
+*.guid
+ 
+# 忽略从Node.js生成的pdb文件
+*.pdb
+/项目文档

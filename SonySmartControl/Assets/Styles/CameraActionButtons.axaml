@@ -1,0 +1,48 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- 遥控对焦：冷静色、描边，强调「半按对焦」感 -->
+    <Style Selector="Button.camera-focus">
+        <Setter Property="MinHeight" Value="44"/>
+        <Setter Property="Padding" Value="14,10"/>
+        <Setter Property="FontSize" Value="14"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="CornerRadius" Value="10"/>
+        <Setter Property="Foreground" Value="#1E40AF"/>
+        <Setter Property="Background" Value="#EFF6FF"/>
+        <Setter Property="BorderBrush" Value="#93C5FD"/>
+        <Setter Property="BorderThickness" Value="1"/>
+    </Style>
+    <Style Selector="Button.camera-focus:pointerover">
+        <Setter Property="Background" Value="#DBEAFE"/>
+        <Setter Property="BorderBrush" Value="#60A5FA"/>
+    </Style>
+    <Style Selector="Button.camera-focus:pressed">
+        <Setter Property="Background" Value="#BFDBFE"/>
+    </Style>
+    <Style Selector="Button.camera-focus:disabled">
+        <Setter Property="Opacity" Value="0.5"/>
+    </Style>
+
+    <!-- 遥控快门：红底白字，接近机身快门键语义 -->
+    <Style Selector="Button.camera-capture">
+        <Setter Property="MinHeight" Value="44"/>
+        <Setter Property="Padding" Value="14,10"/>
+        <Setter Property="FontSize" Value="14"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="CornerRadius" Value="10"/>
+        <Setter Property="Foreground" Value="#FFFFFF"/>
+        <Setter Property="Background" Value="#DC2626"/>
+        <Setter Property="BorderBrush" Value="#B91C1C"/>
+        <Setter Property="BorderThickness" Value="1"/>
+    </Style>
+    <Style Selector="Button.camera-capture:pointerover">
+        <Setter Property="Background" Value="#EF4444"/>
+        <Setter Property="BorderBrush" Value="#DC2626"/>
+    </Style>
+    <Style Selector="Button.camera-capture:pressed">
+        <Setter Property="Background" Value="#B91C1C"/>
+    </Style>
+    <Style Selector="Button.camera-capture:disabled">
+        <Setter Property="Opacity" Value="0.45"/>
+    </Style>
+</Styles>

@@ -1,0 +1,15 @@
+Name,Summary
+CrError_None,No error
+CrError_Generic,Uncategorized errors
+CrError_File,File errors
+CrError_Connect,Communication errors
+CrError_Memory,Memory errors
+CrError_Api,API errors
+CrError_Init,Initialization errors
+CrError_Polling,Polling errors
+CrError_Adaptor,Adapter errors
+CrError_Device,Device errors
+CrError_Contents,Content transfer errors
+CrError_RemoteTransfer,Content transfer in RemoteTransfer Mode errors
+CrError_Monitoring,Monitoring errors
+CrError_Playback,Playback errors

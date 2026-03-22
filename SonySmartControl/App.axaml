@@ -1,0 +1,17 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="SonySmartControl.App"
+             xmlns:local="using:SonySmartControl"
+             RequestedThemeVariant="Default">
+             <!-- "Default" ThemeVariant follows system theme variant. "Dark" or "Light" are other available options. -->
+
+    <Application.DataTemplates>
+        <local:ViewLocator/>
+    </Application.DataTemplates>
+  
+    <Application.Styles>
+        <FluentTheme />
+        <StyleInclude Source="avares://SonySmartControl/Assets/Styles/CameraActionButtons.axaml"/>
+        <StyleInclude Source="avares://SonySmartControl/Assets/Styles/MainWindowChrome.axaml"/>
+    </Application.Styles>
+</Application>

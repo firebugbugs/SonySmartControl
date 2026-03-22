@@ -1,0 +1,198 @@
+event code	callback api	event factor
+CrWarning_Unknown	OnWarning	dummy event code
+CrWarning_Connect_Reconnected	OnWarning	:ref:`Connection event<cb-connect>`
+CrWarning_Connect_Reconnecting	OnWarning	:ref:`Connection event<cb-connect>`
+CrWarning_File_StorageFull	OnWarning	:ref:`file operation event<cb-file-operation>`
+CrWarning_SetFileName_Failed	OnWarning	:ref:`file operation event<cb-file-operation>`
+CrWarning_GetImage_Failed	OnWarning	:ref:`file operation event<cb-file-operation>`
+CrWarning_NetworkErrorOccurred	OnWarning	:ref:`PTPIP network event<cb-network-error>`
+CrWarning_NetworkErrorRecovered	OnWarning	:ref:`PTPIP network event<cb-network-error>`
+CrWarning_Format_Failed	OnWarning	:ref:`CrCommandId_MediaFormat,CrCommandId_MediaQuickFormat callback<cb-MediaFormat>`
+CrWarning_Format_Invalid	OnWarning	:ref:`CrCommandId_MediaFormat,CrCommandId_MediaQuickFormat callback<cb-MediaFormat>`
+CrWarning_Format_Complete	OnWarning	:ref:`CrCommandId_MediaFormat,CrCommandId_MediaQuickFormat callback<cb-MediaFormat>`
+CrWarning_FTPTransferSetting_Read_Result_Invalid	OnWarning	:ref:`UploadSettingFile (FTPTransfer) callback<cb-upload-setting-file-ftp>`
+CrWarning_FTPTransferSetting_Read_Result_OK	OnWarning	:ref:`UploadSettingFile (FTPTransfer) callback<cb-upload-setting-file-ftp>`
+CrWarning_FTPTransferSetting_Read_Result_NG	OnWarning	:ref:`UploadSettingFile (FTPTransfer) callback<cb-upload-setting-file-ftp>`
+CrWarning_FTPTransferSetting_Read_Result_NG_password	OnWarning	:ref:`UploadSettingFile (FTPTransfer) callback<cb-upload-setting-file-ftp>`
+CrWarning_FTPTransferSetting_Read_Result_DeviceBusy	OnWarning	:ref:`UploadSettingFile (FTPTransfer) callback<cb-upload-setting-file-ftp>`
+CrNotify_Captured_Event	OnWarning	:ref:`SDIE_CapturedEvent callback<SDIE_CapturedEvent>`
+CrWarning_DateTime_Setting_Result_Invalid	OnWarning	:ref:`CrDeviceProperty_DateTime_Settings callback<cb-DateTime_Settings>`
+CrWarning_DateTime_Setting_Result_OK	OnWarning	:ref:`CrDeviceProperty_DateTime_Settings callback<cb-DateTime_Settings>`
+CrWarning_DateTime_Setting_Result_Parameter_Error	OnWarning	:ref:`CrDeviceProperty_DateTime_Settings callback<cb-DateTime_Settings>`
+CrWarning_DateTime_Setting_Result_Exclusion_Error	OnWarning	:ref:`CrDeviceProperty_DateTime_Settings callback<cb-DateTime_Settings>`
+CrWarning_DateTime_Setting_Result_System_Error	OnWarning	:ref:`CrDeviceProperty_DateTime_Settings callback<cb-DateTime_Settings>`
+CrWarning_Frame_NotUpdated	OnWarning	":ref:`GetOSDImage,
+GetLiveViewImage callback<cb-get-osd-image>`"
+CrWarning_Connect_Already	OnWarning	:ref:`Connection event<cb-connect>`
+CrWarning_Connect_OverLimitOfDevice	OnWarning	:ref:`Connection event<cb-connect>`
+CrWarning_Format_Canceled	OnWarning	"| :ref:`CrCommandId_MediaFormat,CrCommandId_MediaQuickFormat,<cb-MediaFormat>`
+| :ref:`CrCommandId_CancelMediaFormat callback<cb-MediaFormat>`"
+CrWarning_ZoomAndFocusPosition_Invalid	OnWarning	:ref:`CrDeviceProperty_ZoomAndFocusPosition_Load callback<cb-ZoomAndFocusPosition_Load>`
+CrWarning_ZoomAndFocusPosition_DifferentLens	OnWarning	:ref:`CrDeviceProperty_ZoomAndFocusPosition_Load callback<cb-ZoomAndFocusPosition_Load>`
+CrWarning_ZoomAndFocusPosition_InvalidLens	OnWarning	:ref:`CrDeviceProperty_ZoomAndFocusPosition_Load callback<cb-ZoomAndFocusPosition_Load>`
+CrWarning_ContentsTransferMode_Invalid	OnWarning	:ref:`SDIE_ContentsTransferEvent callback<SDIE_ContentsTransferEvent>`
+CrWarning_ContentsTransferMode_DeviceBusy	OnWarning	:ref:`SDIE_ContentsTransferEvent callback<SDIE_ContentsTransferEvent>`
+CrWarning_ContentsTransferMode_StatusError	OnWarning	:ref:`SDIE_ContentsTransferEvent callback<SDIE_ContentsTransferEvent>`
+CrWarning_ContentsTransferMode_CanceledFromCamera	OnWarning	:ref:`PullContentsFile canceled by camera callback<cb-pullcontentsfile-canceled-by-camera-event>`
+CrWarning_ContentsTransferCancel_Success	OnWarning	:ref:`CrCommandId_CancelContentsTransfer callback<cb-CancelContentsTransfer>`
+CrWarning_ContentsTransferCancel_Error	OnWarning	:ref:`CrCommandId_CancelContentsTransfer callback<cb-CancelContentsTransfer>`
+CrNotify_ContentsTransfer_Start	OnNotifyContentsTransfer	:ref:`PullContentsFile callback<cb-PullContentsFile>`
+CrNotify_ContentsTransfer_Complete	OnNotifyContentsTransfer	:ref:`PullContentsFile callback<cb-PullContentsFile>`
+CrWarning_CameraSettings_Read_Result_Invalid	OnWarning	:ref:`UploadSettingFile (Setup) callback<cb-upload-setting-file-setup>`
+CrWarning_CameraSettings_Read_Result_OK	OnWarning	:ref:`UploadSettingFile (Setup) callback<cb-upload-setting-file-setup>`
+CrWarning_CameraSettings_Read_Result_NG	OnWarning	:ref:`UploadSettingFile (Setup) callback<cb-upload-setting-file-setup>`
+CrWarning_CameraSettings_Save_Result_NG	OnWarning	:ref:`DownloadSettingFile (Setup) callback<cb-download-setting-file-setup>`
+CrWarning_RequestDisplayStringList_Success	OnWarning	:ref:`RequestDisplayStringList callback<cb-request-display-string-list>`
+CrWarning_RequestDisplayStringList_Error	OnWarning	:ref:`RequestDisplayStringList callback<cb-request-display-string-list>`
+CrWarning_DisplayListChanged_BaseLook_AELevelOffsetExposureValueList	OnWarning	:ref:`SDIE_DisplayListChangedEvent callback<SDIE_DisplayListChangedEvent>`
+CrWarning_DisplayListChanged_BaseLook_InputDisplayList	OnWarning	:ref:`SDIE_DisplayListChangedEvent callback<SDIE_DisplayListChangedEvent>`
+CrWarning_DisplayListChanged_BaseLook_NameDisplayList	OnWarning	:ref:`SDIE_DisplayListChangedEvent callback<SDIE_DisplayListChangedEvent>`
+CrWarning_DisplayListChanged_BaseLook_OutputDisplayList	OnWarning	:ref:`SDIE_DisplayListChangedEvent callback<SDIE_DisplayListChangedEvent>`
+CrWarning_DisplayListChanged_SceneFile_NameDisplayList	OnWarning	:ref:`SDIE_DisplayListChangedEvent callback<SDIE_DisplayListChangedEvent>`
+CrWarning_DisplayListChanged_ShootingMode_CinemaColorGamutDisplayList	OnWarning	:ref:`SDIE_DisplayListChangedEvent callback<SDIE_DisplayListChangedEvent>`
+CrWarning_DisplayListChanged_ShootingMode_TargetDisplayDisplayList	OnWarning	:ref:`SDIE_DisplayListChangedEvent callback<SDIE_DisplayListChangedEvent>`
+CrWarning_DisplayListChanged_Camera_GainBaseISODisplayList	OnWarning	:ref:`SDIE_DisplayListChangedEvent callback<SDIE_DisplayListChangedEvent>`
+CrWarning_DisplayListChanged_Video_EIGainDisplayList	OnWarning	:ref:`SDIE_DisplayListChangedEvent callback<SDIE_DisplayListChangedEvent>`
+CrWarning_DisplayListChanged_Button_AssignDisplayList	OnWarning	:ref:`SDIE_DisplayListChangedEvent callback<SDIE_DisplayListChangedEvent>`
+CrWarning_DisplayListChanged_Button_AssignShortDisplayList	OnWarning	:ref:`SDIE_DisplayListChangedEvent callback<SDIE_DisplayListChangedEvent>`
+CrWarning_MediaProfileChanged_Slot1	OnWarning	:ref:`SDIE_MediaProfileChanged callback<SDIE_MediaProfileChanged>`
+CrWarning_MediaProfileChanged_Slot2	OnWarning	:ref:`SDIE_MediaProfileChanged callback<SDIE_MediaProfileChanged>`
+CrWarning_LensInformationChanged	OnWarning	:ref:`SDIE_LensInformationChanged callback<SDIE_LensInformationChanged>`
+CrWarning_RequestLensInformation_Result_Success	OnWarning	:ref:`RequestLensInformation callback<cb-request-lens-information>`
+CrWarning_RequestLensInformation_Result_DeviceBusy	OnWarning	:ref:`RequestLensInformation callback<cb-request-lens-information>`
+CrWarning_RequestLensInformation_Result_Error	OnWarning	:ref:`RequestLensInformation callback<cb-request-lens-information>`
+CrWarning_DisplayListChanged_CreativeLook_NameDisplayList	OnWarning	:ref:`SDIE_DisplayListChangedEvent callback<SDIE_DisplayListChangedEvent>`
+CrWarning_CustomWBCapture_Result_Invalid	OnWarning	:ref:`CrDeviceProperty_CustomWB_Capture callback<cb-CustomWB_Capture>`
+CrWarning_CustomWBCapture_Result_OK	OnWarning	:ref:`CrDeviceProperty_CustomWB_Capture callback<cb-CustomWB_Capture>`
+CrWarning_CustomWBCapture_Result_NG	OnWarning	:ref:`CrDeviceProperty_CustomWB_Capture callback<cb-CustomWB_Capture>`
+CrWarning_ImportLUTFile_Result_Invalid	OnWarning	:ref:`ImportLUTFile callback<cb-import-lut-file>`
+CrWarning_ImportLUTFile_Result_OK	OnWarning	:ref:`ImportLUTFile callback<cb-import-lut-file>`
+CrWarning_ImportLUTFile_Result_NG	OnWarning	:ref:`ImportLUTFile callback<cb-import-lut-file>`
+CrWarning_ImportLUTFile_Result_InvalidFileName	OnWarning	:ref:`ImportLUTFile callback<cb-import-lut-file>`
+CrWarning_ImportLUTFile_Result_DeviceBusy	OnWarning	:ref:`ImportLUTFile callback<cb-import-lut-file>`
+CrWarning_ImportLUTFile_Result_DeviceStorageFull	OnWarning	:ref:`ImportLUTFile callback<cb-import-lut-file>`
+CrWarning_ImportLUTFile_Result_InvalidParameter	OnWarning	:ref:`ImportLUTFile callback<cb-import-lut-file>`
+CrWarning_ImportLUTFile_Result_InvalidFile	OnWarning	:ref:`ImportLUTFile callback<cb-import-lut-file>`
+CrWarning_FTPTransferSetting_Save_Result_NG	OnWarning	:ref:`DownloadSettingFile (FTPTransfer) callback<cb-download-setting-file-ftp>`
+CrWarning_FTPTransferSetting_Save_Result_DeviceBusy	OnWarning	:ref:`DownloadSettingFile (FTPTransfer) callback<cb-download-setting-file-ftp>`
+CrWarning_FTPTransferSetting_SaveRead_PasswordLengthOverMax	OnWarning	":ref:`DownloadSettingFile (FTPTransfer)<cb-download-setting-file-ftp>`
+:ref:`UploadSettingFile (FTPTransfer) callback<cb-upload-setting-file-ftp>`"
+CrWarning_FTPTransferSetting_SaveRead_PasswordIncludesInvalidCharacter	OnWarning	":ref:`DownloadSettingFile (FTPTransfer)<cb-download-setting-file-ftp>`
+:ref:`UploadSettingFile (FTPTransfer) callback<cb-upload-setting-file-ftp>`"
+CrWarning_RequestFTPServerSettingList_Success	OnWarning	:ref:`RequestFTPServerSettingList callback<cb-request-ftp-server-setting-list>`
+CrWarning_RequestFTPServerSettingList_DeviceBusy	OnWarning	:ref:`RequestFTPServerSettingList callback<cb-request-ftp-server-setting-list>`
+CrWarning_RequestFTPServerSettingList_Error	OnWarning	:ref:`RequestFTPServerSettingList callback<cb-request-ftp-server-setting-list>`
+CrWarning_SetFTPServerSetting_Result_OK	OnWarning	:ref:`SetFTPServerSetting callback<cb-set-ftp-server-setting>`
+CrWarning_SetFTPServerSetting_Result_NG	OnWarning	:ref:`SetFTPServerSetting callback<cb-set-ftp-server-setting>`
+CrWarning_SetFTPServerSetting_Result_DeviceBusy	OnWarning	:ref:`SetFTPServerSetting callback<cb-set-ftp-server-setting>`
+CrWarning_RequestFTPJobList_Result_Success	OnWarning	:ref:`RequestFTPJobList callback<cb-request-ftp-job-list>`
+CrWarning_RequestFTPJobList_Result_DeviceBusy	OnWarning	:ref:`RequestFTPJobList callback<cb-request-ftp-job-list>`
+CrWarning_RequestFTPJobList_Result_Error	OnWarning	:ref:`RequestFTPJobList callback<cb-request-ftp-job-list>`
+CrWarning_ControlFTPJobList_Set_Result_Invalid	OnWarning	:ref:`ControlFTPJobList callback<cb-control-ftp-job-list>`
+CrWarning_ControlFTPJobList_Set_Result_OK	OnWarning	:ref:`ControlFTPJobList callback<cb-control-ftp-job-list>`
+CrWarning_ControlFTPJobList_Set_Result_NG	OnWarning	:ref:`ControlFTPJobList callback<cb-control-ftp-job-list>`
+CrWarning_ControlFTPJobList_Set_Result_DeviceBusy	OnWarning	:ref:`ControlFTPJobList callback<cb-control-ftp-job-list>`
+CrWarning_ControlFTPJobList_Delete_Result_Invalid	OnWarning	:ref:`ControlFTPJobList callback<cb-control-ftp-job-list>`
+CrWarning_ControlFTPJobList_Delete_Result_OK	OnWarning	:ref:`ControlFTPJobList callback<cb-control-ftp-job-list>`
+CrWarning_ControlFTPJobList_Delete_Result_NG	OnWarning	:ref:`ControlFTPJobList callback<cb-control-ftp-job-list>`
+CrWarning_ControlFTPJobList_Delete_Result_DeviceBusy	OnWarning	:ref:`ControlFTPJobList callback<cb-control-ftp-job-list>`
+CrWarning_ControlFTPJobList_Suspend_Result_Invalid	OnWarning	:ref:`ControlFTPJobList callback<cb-control-ftp-job-list>`
+CrWarning_ControlFTPJobList_Suspend_Result_OK	OnWarning	:ref:`ControlFTPJobList callback<cb-control-ftp-job-list>`
+CrWarning_ControlFTPJobList_Suspend_Result_NG	OnWarning	:ref:`ControlFTPJobList callback<cb-control-ftp-job-list>`
+CrWarning_ControlFTPJobList_Suspend_Result_DeviceBusy	OnWarning	:ref:`ControlFTPJobList callback<cb-control-ftp-job-list>`
+CrWarning_ControlFTPJobList_Resume_Result_Invalid	OnWarning	:ref:`ControlFTPJobList callback<cb-control-ftp-job-list>`
+CrWarning_ControlFTPJobList_Resume_Result_OK	OnWarning	:ref:`ControlFTPJobList callback<cb-control-ftp-job-list>`
+CrWarning_ControlFTPJobList_Resume_Result_NG	OnWarning	:ref:`ControlFTPJobList callback<cb-control-ftp-job-list>`
+CrWarning_ControlFTPJobList_Resume_Result_DeviceBusy	OnWarning	:ref:`ControlFTPJobList callback<cb-control-ftp-job-list>`
+CrWarning_MovieRecordingOperation_Result_Invalid	OnWarning	:ref:`SDIE_MovieRecOperationResults callback<SDIE_MovieRecOperationResults>`
+CrWarning_MovieRecordingOperation_Result_OK	OnWarning	:ref:`SDIE_MovieRecOperationResults callback<SDIE_MovieRecOperationResults>`
+CrWarning_MovieRecordingOperation_Result_NG	OnWarning	:ref:`SDIE_MovieRecOperationResults callback<SDIE_MovieRecOperationResults>`
+CrWarning_FocusPosition_Result_Invalid	OnWarning	:ref:`SDIE_FocusPositionResult callback<SDIE_FocusPositionResult>`
+CrWarning_FocusPosition_Result_OK	OnWarning	:ref:`SDIE_FocusPositionResult callback<SDIE_FocusPositionResult>`
+CrWarning_FocusPosition_Result_NG	OnWarning	:ref:`SDIE_FocusPositionResult callback<SDIE_FocusPositionResult>`
+CrWarning_DisplayListChanged_FTP_ServerNameDisplayList	OnWarning	:ref:`SDIE_DisplayListChangedEvent callback<SDIE_DisplayListChangedEvent>`
+CrWarning_DisplayListChanged_FTP_UpLoadDirectoryDisplayList	OnWarning	:ref:`SDIE_DisplayListChangedEvent callback<SDIE_DisplayListChangedEvent>`
+CrWarning_DisplayListChanged_FTP_JobStatusDisplayList	OnWarning	:ref:`SDIE_DisplayListChangedEvent callback<SDIE_DisplayListChangedEvent>`
+CrWarning_DisplayListChanged_ExposureIndexPreset1DisplayList	OnWarning	:ref:`SDIE_DisplayListChangedEvent callback<SDIE_DisplayListChangedEvent>`
+CrWarning_DisplayListChanged_IPTCMetadataDisplayList	OnWarning	:ref:`SDIE_DisplayListChangedEvent callback<SDIE_DisplayListChangedEvent>`
+CrWarning_DisplayListChanged_SubjectRecognitionAFDisplayList	OnWarning	:ref:`SDIE_DisplayListChangedEvent callback<SDIE_DisplayListChangedEvent>`
+CrWarning_DisplayListChanged_BaseLook_MetaRecordSupportDisplayList	OnWarning	:ref:`SDIE_DisplayListChangedEvent callback<SDIE_DisplayListChangedEvent>`
+CrWarning_MediaProfileChanged_Slot3	OnWarning	:ref:`SDIE_MediaProfileChanged callback<SDIE_MediaProfileChanged>`
+CrWarning_ControlMonitoring_Result_Start_Failed	OnWarning	:ref:`ControlMonitoring callback<cb-control-monitoring>`
+CrWarning_ControlMonitoring_Result_Stop_Failed	OnWarning	:ref:`ControlMonitoring callback<cb-control-monitoring>`
+CrWarning_ControlMonitoring_Result_Invalid	OnWarning	:ref:`ControlMonitoring callback<cb-control-monitoring>`
+CrWarning_ControlMonitoring_Result_SystemError	OnWarning	:ref:`ControlMonitoring callback<cb-control-monitoring>`
+CrWarning_ControlMonitoring_Result_MaximumNumberSimultaneousDeliveries	OnWarning	:ref:`ControlMonitoring callback<cb-control-monitoring>`
+CrWarning_ControlMonitoring_Result_ExclusiveError	OnWarning	:ref:`ControlMonitoring callback<cb-control-monitoring>`
+CrWarning_ControlMonitoring_Result_AlreadyStartedInDifferentType	OnWarning	:ref:`ControlMonitoring callback<cb-control-monitoring>`
+CrWarning_ControlMonitoring_Result_MonitoringStopped	OnWarning	:ref:`ControlMonitoring callback<cb-control-monitoring>`
+CrWarning_ControlMonitoring_Result_InvalidParameter	OnWarning	:ref:`ControlMonitoring callback<cb-control-monitoring>`
+CrWarning_ControlMonitoring_Result_WifiHighTemperature	OnWarning	:ref:`ControlMonitoring callback<cb-control-monitoring>`
+CrWarning_ControlMonitoring_Result_Streaming	OnWarning	:ref:`ControlMonitoring callback<cb-control-monitoring>`
+CrWarning_ControlMonitoring_StatusChanged	OnWarning	:ref:`ControlMonitoring callback<cb-control-monitoring>`
+CrWarning_ControlMonitoring_LostReceiving	OnWarning	:ref:`ControlMonitoring error callback<cb-ControlMonitoring-error-event>`
+CrWarning_RequestZoomAndFocusPreset_Result_Success	OnWarning	:ref:`RequestZoomAndFocusPreset callback<cb-request-zoom-and-focus-preset>`
+CrWarning_RequestZoomAndFocusPreset_Result_DeviceBusy	OnWarning	:ref:`RequestZoomAndFocusPreset callback<cb-request-zoom-and-focus-preset>`
+CrWarning_RequestZoomAndFocusPreset_Result_Error	OnWarning	:ref:`RequestZoomAndFocusPreset callback<cb-request-zoom-and-focus-preset>`
+CrWarning_ZoomAndFocusPresetChanged	OnWarning	:ref:`RequestZoomAndFocusPreset callback<cb-request-zoom-and-focus-preset>`
+CrWarning_CautionDisplay	OnWarning	:ref:`SDIE_CautionDisplayEvent callback<SDIE_CautionDisplayEvent>`
+CrNotify_FTPTransferResult_Success	OnNotifyFTPTransferResult	:ref:`RequestFTPTransferResult callback<cb-request-ftp-transfer-result>`
+CrNotify_FTPTransferResult_Failure	OnNotifyFTPTransferResult	:ref:`RequestFTPTransferResult callback<cb-request-ftp-transfer-result>`
+CrWarning_ZoomPosition_Result_Invalid	OnWarning	:ref:`SDIE_ZoomPositionResult callback<SDIE_ZoomPositionResult>`
+CrWarning_ZoomPosition_Result_OK	OnWarning	:ref:`SDIE_ZoomPositionResult callback<SDIE_ZoomPositionResult>`
+CrWarning_ZoomPosition_Result_Reserved1	OnWarning	:ref:`SDIE_ZoomPositionResult callback<SDIE_ZoomPositionResult>`
+CrWarning_ZoomPosition_Result_Reserved2	OnWarning	:ref:`SDIE_ZoomPositionResult callback<SDIE_ZoomPositionResult>`
+CrNotify_RemoteTransfer_Result_OK	OnNotifyRemoteTransferResult	"| :ref:`GetRemoteTransferContentsData, GetRemoteTransferContentsDataFile, <cb-get-remote-transfer-contents-compressed-data-file>`
+| :ref:`GetRemoteTransferContentsCompressedData, GetRemoteTransferContentsCompressedDataFile callback<cb-get-remote-transfer-contents-compressed-data-file>`"
+CrNotify_RemoteTransfer_Result_NG	OnNotifyRemoteTransferResult	"| :ref:`GetRemoteTransferContentsData, GetRemoteTransferContentsDataFile, <cb-get-remote-transfer-contents-compressed-data-file>`
+| :ref:`GetRemoteTransferContentsCompressedData, GetRemoteTransferContentsCompressedDataFile callback<cb-get-remote-transfer-contents-compressed-data-file>`"
+CrNotify_RemoteTransfer_Result_DeviceBusy	OnNotifyRemoteTransferResult	"| :ref:`GetRemoteTransferContentsData, GetRemoteTransferContentsDataFile, <cb-get-remote-transfer-contents-compressed-data-file>`
+| :ref:`GetRemoteTransferContentsCompressedData, GetRemoteTransferContentsCompressedDataFile callback<cb-get-remote-transfer-contents-compressed-data-file>`"
+CrNotify_RemoteTransfer_Changed_All	OnNotifyRemoteTransferContentsListChanged	:ref:`ContentInfoList Change event callback<cb-get-remote-transfer-contents-info-list>`
+CrNotify_RemoteTransfer_Changed_Add	OnNotifyRemoteTransferContentsListChanged	:ref:`ContentInfoList Change event callback<cb-get-remote-transfer-contents-info-list>`
+CrNotify_RemoteTransfer_Changed_Clear	OnNotifyRemoteTransferContentsListChanged	:ref:`ContentInfoList Change event callback<cb-get-remote-transfer-contents-info-list>`
+CrNotify_RemoteTransfer_InProgress	OnNotifyRemoteTransferResult	:ref:`GetRemoteTransferContentsData callback<cb-get-remote-transfer-contents-data>`
+CrNotify_RemoteTransfer_Control_Stopped	OnNotifyRemoteTransferResult	:ref:`ControlGetRemoteTransferContentsDataFile callback<cb-control-get-remote-transfer-contents-data-file>`
+CrNotify_RemoteTransfer_Control_Canceled	OnNotifyRemoteTransferResult	:ref:`ControlGetRemoteTransferContentsDataFile callback<cb-control-get-remote-transfer-contents-data-file>`
+CrWarning_SetPostViewEnable_Result_OK	OnWarning	:ref:`SetDeviceSetting (Setting_Key_EnablePostView) callback<cb-set-device-setting>`
+CrWarning_SetPostViewEnable_Result_NG	OnWarning	:ref:`SetDeviceSetting (Setting_Key_EnablePostView) callback<cb-set-device-setting>`
+CrWarning_DisplayListChanged_CameraButtonFunctionCapabilityDisplayList	OnWarning	:ref:`SDIE_DisplayListChangedEvent callback<SDIE_DisplayListChangedEvent>`
+CrWarning_DisplayListChanged_CameraLeverFunctionCapabilityDisplayList	OnWarning	:ref:`SDIE_DisplayListChangedEvent callback<SDIE_DisplayListChangedEvent>`
+CrWarning_DisplayListChanged_CameraDialFunctionCapabilityDisplayList	OnWarning	:ref:`SDIE_DisplayListChangedEvent callback<SDIE_DisplayListChangedEvent>`
+CrWarning_Playback_Result_Invalid	OnWarning	:ref:`ControlMoviePlayback callback<cb-control-movie-playback>`
+CrNotify_Playback_Result_NormalTermination	OnWarning	:ref:`ControlMoviePlayback callback<cb-control-movie-playback>`
+CrWarning_Playback_Result_CameraOperateTermination	OnWarning	:ref:`ControlMoviePlayback callback<cb-control-movie-playback>`
+CrWarning_Playback_Result_SystemError	OnWarning	:ref:`ControlMoviePlayback callback<cb-control-movie-playback>`
+CrWarning_Playback_Result_HighTemperature	OnWarning	:ref:`ControlMoviePlayback callback<cb-control-movie-playback>`
+CrWarning_Playback_Result_MediaRemoval	OnWarning	:ref:`ControlMoviePlayback callback<cb-control-movie-playback>`
+CrWarning_Playback_Result_ContentsError	OnWarning	:ref:`ControlMoviePlayback callback<cb-control-movie-playback>`
+CrWarning_Playback_Result_KeepAliveTimeout	OnWarning	:ref:`ControlMoviePlayback callback<cb-control-movie-playback>`
+CrNotify_Playback_StatusChanged	OnWarning	:ref:`ControlMoviePlayback callback<cb-control-movie-playback>`
+CrNotify_Playback_Result_StopComplete	OnWarning	:ref:`ControlMoviePlayback callback<cb-control-movie-playback>`
+CrWarning_Playback_Result_Start_Fail	OnWarning	:ref:`ControlMoviePlayback callback<cb-control-movie-playback>`
+CrWarning_Playback_Result_Stop_Fail	OnWarning	:ref:`ControlMoviePlayback callback<cb-control-movie-playback>`
+CrWarning_Playback_Result_Play_Fail	OnWarning	:ref:`ControlMoviePlayback callback<cb-control-movie-playback>`
+CrWarning_Playback_Result_Pause_Fail	OnWarning	:ref:`ControlMoviePlayback callback<cb-control-movie-playback>`
+CrNotify_Playback_Result_PlaybackInfo_Success	OnWarning	:ref:`RequestMoviePlaybackStatus callback<cb-request-movie-playback-status>`
+CrWarning_Playback_Result_PlaybackInfo_Error	OnWarning	:ref:`RequestMoviePlaybackStatus callback<cb-request-movie-playback-status>`
+CrNotify_RemoteFirmware_Precheck_OK	OnNotifyRemoteFirmwareUpdateResult	:ref:`PrecheckFirmwareUpdate callback<cb-PrecheckFirmwareUpdate>`
+CrNotify_RemoteFirmware_Precheck_NG	OnNotifyRemoteFirmwareUpdateResult	:ref:`PrecheckFirmwareUpdate callback<cb-PrecheckFirmwareUpdate>`
+CrNotify_RemoteFirmware_UpdateEvent	OnNotifyRemoteFirmwareUpdateResult	:ref:`SDIE_FirmwareUpdateEvent callback<SDIE_FirmwareUpdateEvent>`
+CrNotify_RemoteFirmware_GetUpdaterInfo_Request_NG	OnNotifyRemoteFirmwareUpdateResult	:ref:`RequestFirmwareUpdaterInfo callback<cb-request-firmware-updater-info>`
+CrNotify_RemoteFirmware_GetUpdaterInfo_OK	OnNotifyRemoteFirmwareUpdateResult	:ref:`RequestFirmwareUpdaterInfo callback<cb-request-firmware-updater-info>`
+CrNotify_RemoteFirmware_GetUpdaterInfo_NG	OnNotifyRemoteFirmwareUpdateResult	:ref:`RequestFirmwareUpdaterInfo callback<cb-request-firmware-updater-info>`
+CrNotify_RemoteFirmware_Upload_OK	OnNotifyRemoteFirmwareUpdateResult	:ref:`UploadPartialFile, CancelFirmwareUpload callback<cb-UploadPartialFile>`
+CrNotify_RemoteFirmware_Upload_NG	OnNotifyRemoteFirmwareUpdateResult	:ref:`UploadPartialFile, CancelFirmwareUpload callback<cb-UploadPartialFile>`
+CrNotify_RemoteFirmware_Upload_Rate	OnNotifyRemoteFirmwareUpdateResult	:ref:`UploadPartialFile, CancelFirmwareUpload callback<cb-UploadPartialFile>`
+CrNotify_RemoteFirmware_Update_OK	OnNotifyRemoteFirmwareUpdateResult	:ref:`StartFirmwareUpdate callback<cb-StartFirmwareUpdate>`
+CrNotify_RemoteFirmware_Update_NG	OnNotifyRemoteFirmwareUpdateResult	:ref:`StartFirmwareUpdate callback<cb-StartFirmwareUpdate>`
+CrWarning_ControlMonitoring_ErrorOccurred	OnWarning	:ref:`ControlMonitoring error event callback<cb-ControlMonitoring-error-event>`
+CrWarning_DisplayListChanged_TargetStreamingDestinationSelectDisplayList	OnWarning	:ref:`SDIE_DisplayListChangedEvent callback<SDIE_DisplayListChangedEvent>`
+CrWarning_DisplayListChanged_CustomGridLineFileNameDisplayList	OnWarning	:ref:`SDIE_DisplayListChangedEvent callback<SDIE_DisplayListChangedEvent>`
+CrWarning_UploadSceneFile_Result_Invalid	OnWarning	:ref:`UploadSceneFile callback<cb-UploadSceneFile>`
+CrNotify_UploadSceneFile_Result_OK	OnWarning	:ref:`UploadSceneFile callback<cb-UploadSceneFile>`
+CrWarning_UploadSceneFile_Result_NG	OnWarning	:ref:`UploadSceneFile callback<cb-UploadSceneFile>`
+CrWarning_UploadSceneFile_Result_InvalidFileName	OnWarning	:ref:`UploadSceneFile callback<cb-UploadSceneFile>`
+CrWarning_UploadSceneFile_Result_DeviceBusy	OnWarning	:ref:`UploadSceneFile callback<cb-UploadSceneFile>`
+CrWarning_UploadSceneFile_Result_SomeIsCorrupted	OnWarning	:ref:`UploadSceneFile callback<cb-UploadSceneFile>`
+CrWarning_DownloadSceneFile_Result_NG	OnWarning	:ref:`DownloadSceneFile callback<cb-downloadscenefile>`

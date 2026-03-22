@@ -1,0 +1,54 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="SonySmartControl.Controls.WheelPickerCombo"
+             HorizontalAlignment="Stretch"
+             MinHeight="32">
+    <!-- 不透明底色（避免 DynamicResource 在部分主题下接近透明） -->
+    <UserControl.Resources>
+        <SolidColorBrush x:Key="WheelPickerOpaqueFace" Color="#FFFFFFFF"/>
+    </UserControl.Resources>
+    <Grid ClipToBounds="False">
+        <Border x:Name="RootBorder"
+                Background="{StaticResource WheelPickerOpaqueFace}"
+                BorderBrush="{DynamicResource ComboBoxBorderBrush}"
+                BorderThickness="1"
+                CornerRadius="4"
+                Padding="12,0,8,0"
+                Cursor="Hand"
+                PointerEntered="RootBorder_OnPointerEntered"
+                PointerExited="RootBorder_OnPointerExited"
+                PointerPressed="RootBorder_OnPointerPressed"
+                PointerWheelChanged="RootBorder_OnPointerWheelChanged">
+            <Grid ColumnDefinitions="*,Auto" MinHeight="30">
+                <TextBlock x:Name="DisplayText"
+                           VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis"/>
+                <TextBlock Grid.Column="1"
+                           VerticalAlignment="Center"
+                           Margin="6,0,0,0"
+                           FontSize="10"
+                           Opacity="0.65"
+                           Text="▾"/>
+            </Grid>
+        </Border>
+
+        <Popup x:Name="DropPopup"
+               ZIndex="1000"
+               PlacementTarget="{Binding #RootBorder}"
+               Placement="BottomEdgeAlignedLeft"
+               IsLightDismissEnabled="True"
+               Opened="DropPopup_OnOpened">
+            <Border x:Name="DropPopupBorder"
+                    Background="{StaticResource WheelPickerOpaqueFace}"
+                    BorderBrush="{DynamicResource ComboBoxBorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="4"
+                    MaxHeight="240">
+                <ListBox x:Name="DropList"
+                         Background="{StaticResource WheelPickerOpaqueFace}"
+                         BorderThickness="0"
+                         SelectionChanged="DropList_OnSelectionChanged"/>
+            </Border>
+        </Popup>
+    </Grid>
+</UserControl>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AvaloniaProject">
+    <option name="projectPerEditor">
+      <map>
+        <entry key="SonyDemo/Assets/Styles/CameraActionButtons.axaml" value="SonyDemo/SonyDemo.csproj" />
+        <entry key="SonyDemo/Views/MainWindow.axaml" value="SonyDemo/SonyDemo.csproj" />
+      </map>
+    </option>
+  </component>
+</project>

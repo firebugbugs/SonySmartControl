@@ -1,0 +1,3 @@
+.header-orientation-vertical th:nth-child(n+4) {
+    writing-mode: vertical-rl;
+}

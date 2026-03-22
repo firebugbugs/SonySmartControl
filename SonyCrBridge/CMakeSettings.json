@@ -1,0 +1,34 @@
+{
+  "configurations": [
+    {
+      "name": "x64-Release",
+      "generator": "Ninja",
+      "configurationType": "Release",
+      "inheritEnvironments": [ "msvc_x64_x64" ],
+      "buildRoot": "${projectDir}\\out\\build\\${name}",
+      "installRoot": "${projectDir}\\out\\install\\${name}",
+      "cmakeCommandArgs": "",
+      "buildCommandArgs": "",
+      "ctestCommandArgs": "",
+      "cmakeVariables": {
+        "SONY_CR_BRIDGE_STUB": "OFF",
+        "SONY_CRSDK_ROOT": "${projectDir}\\..\\..\\CrSDK_v2.01.00_20260203a_Win64\\RemoteCli"
+      }
+    },
+    {
+      "name": "x64-Debug",
+      "generator": "Ninja",
+      "configurationType": "Debug",
+      "inheritEnvironments": [ "msvc_x64_x64" ],
+      "buildRoot": "${projectDir}\\out\\build\\${name}",
+      "installRoot": "${projectDir}\\out\\install\\${name}",
+      "cmakeCommandArgs": "",
+      "buildCommandArgs": "",
+      "ctestCommandArgs": "",
+      "cmakeVariables": {
+        "SONY_CR_BRIDGE_STUB": "OFF",
+        "SONY_CRSDK_ROOT": "${projectDir}\\..\\..\\CrSDK_v2.01.00_20260203a_Win64\\RemoteCli"
+      }
+    }
+  ]
+}
