@@ -205,6 +205,60 @@ internal static class SonyCrBridgeNative
     }
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate int SonyCr_DeleteRemoteContentMatchingFileNameUtf16Delegate(
+        [MarshalAs(UnmanagedType.LPWStr)] string fileNameUtf16);
+
+    private static readonly object DeleteRemoteLock = new();
+    private static SonyCr_DeleteRemoteContentMatchingFileNameUtf16Delegate? _deleteRemoteByFileName;
+    private static bool _deleteRemoteExportUnavailable;
+
+    /// <summary>
+    /// 在 Remote Transfer 列表中按<strong>文件名不含路径</strong>匹配并删除机身内容（RAW+JPEG 同一条 contentId）。
+    /// 旧 DLL 无导出、未连接或列表中无匹配时返回 null；否则返回状态码（含 <see cref="SonyCrStatus.ErrNotFound"/>）。
+    /// </summary>
+    internal static SonyCrStatus? TryDeleteRemoteContentMatchingFileName(string fileNameOnly)
+    {
+        if (string.IsNullOrWhiteSpace(fileNameOnly))
+            return null;
+
+        var name = Path.GetFileName(fileNameOnly.Trim());
+        if (string.IsNullOrEmpty(name))
+            return null;
+
+        lock (DeleteRemoteLock)
+        {
+            if (_deleteRemoteExportUnavailable)
+                return null;
+
+            if (_deleteRemoteByFileName == null)
+            {
+                IntPtr h;
+                try
+                {
+                    h = NativeLibrary.Load(Dll);
+                }
+                catch (DllNotFoundException)
+                {
+                    _deleteRemoteExportUnavailable = true;
+                    return null;
+                }
+
+                if (!NativeLibrary.TryGetExport(h, "SonyCr_DeleteRemoteContentMatchingFileNameUtf16", out var addr))
+                {
+                    _deleteRemoteExportUnavailable = true;
+                    return null;
+                }
+
+                _deleteRemoteByFileName =
+                    Marshal.GetDelegateForFunctionPointer<SonyCr_DeleteRemoteContentMatchingFileNameUtf16Delegate>(addr);
+            }
+        }
+
+        var st = _deleteRemoteByFileName!(name);
+        return (SonyCrStatus)st;
+    }
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate int SonyCr_GetShootingStateJsonUtf8Delegate(
         [Out] byte[] buffer,
         int bufferSizeBytes,

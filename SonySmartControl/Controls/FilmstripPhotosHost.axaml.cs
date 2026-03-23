@@ -20,6 +20,10 @@ public partial class FilmstripPhotosHost : UserControl
 
     public static readonly StyledProperty<ICommand?> SelectCommandProperty =
         AvaloniaProperty.Register<FilmstripPhotosHost, ICommand?>(nameof(SelectCommand));
+    public static readonly StyledProperty<ICommand?> CopyCommandProperty =
+        AvaloniaProperty.Register<FilmstripPhotosHost, ICommand?>(nameof(CopyCommand));
+    public static readonly StyledProperty<ICommand?> DeleteCommandProperty =
+        AvaloniaProperty.Register<FilmstripPhotosHost, ICommand?>(nameof(DeleteCommand));
 
     public IEnumerable? ItemsSource
     {
@@ -31,6 +35,18 @@ public partial class FilmstripPhotosHost : UserControl
     {
         get => GetValue(SelectCommandProperty);
         set => SetValue(SelectCommandProperty, value);
+    }
+
+    public ICommand? CopyCommand
+    {
+        get => GetValue(CopyCommandProperty);
+        set => SetValue(CopyCommandProperty, value);
+    }
+
+    public ICommand? DeleteCommand
+    {
+        get => GetValue(DeleteCommandProperty);
+        set => SetValue(DeleteCommandProperty, value);
     }
 
     /// <summary>供主窗口把滚轮映射为横向滚动。</summary>

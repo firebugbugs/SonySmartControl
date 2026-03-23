@@ -14,8 +14,11 @@ public sealed class CrSdkCameraPreviewSession : ICameraPreviewSession
 
     private readonly object _gate = new();
     private bool _sdkConnected;
+    /// <summary>仅在 <c>ConnectRemoteByIndex</c> 成功之后为 true；失败路径下不调用 <see cref="SonyCrBridgeNative.TryReleaseSdk"/>，避免 SonyCr_Release 在异常状态下长时间阻塞或闪退。</summary>
+    private bool _shouldReleaseSdkOnDispose;
     private CancellationTokenSource? _cts;
     private Task? _loopTask;
+    public string? ConnectedCameraModel { get; private set; }
 
     public event EventHandler<Bitmap>? FrameReceived;
 
@@ -46,11 +49,14 @@ public sealed class CrSdkCameraPreviewSession : ICameraPreviewSession
                         if (count < 1)
                             throw new InvalidOperationException("未检测到相机：请 USB/网线连接并设为「遥控拍摄」后重试。");
 
+                        ConnectedCameraModel = SonyCrBridgeNative.GetCameraModelUtf8(0);
+
                         st = SonyCrBridgeNative.SonyCr_ConnectRemoteByIndex(0);
                         if (st != (int)SonyCrStatus.Ok)
                             throw CrEx(st, "SonyCr_ConnectRemoteByIndex(0)");
 
                         _sdkConnected = true;
+                        _shouldReleaseSdkOnDispose = true;
                     }
                     catch (DllNotFoundException ex)
                     {
@@ -112,6 +118,7 @@ public sealed class CrSdkCameraPreviewSession : ICameraPreviewSession
         lock (_gate)
         {
             _sdkConnected = false;
+            ConnectedCameraModel = null;
         }
     }
 
@@ -260,12 +267,15 @@ public sealed class CrSdkCameraPreviewSession : ICameraPreviewSession
             // 断开或后台 Live View 循环异常时仍须尽力释放 native，避免向上冒泡导致界面任务崩溃。
         }
 
-        try
+        if (_shouldReleaseSdkOnDispose)
         {
-            SonyCrBridgeNative.TryReleaseSdk();
-        }
-        catch
-        {
+            try
+            {
+                SonyCrBridgeNative.TryReleaseSdk();
+            }
+            catch
+            {
+            }
         }
     }
 

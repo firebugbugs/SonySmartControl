@@ -13,6 +13,7 @@ public enum SonyCrStatus
     ErrNotConnected = -7,
     ErrControlFailed = -8,
     ErrInvalidParam = -9,
+    ErrNotFound = -10,
     ErrSdkNotLinked = -999,
     ErrNotImplemented = -100,
 }

@@ -1,7 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
         <OutputType>WinExe</OutputType>
-        <TargetFramework>net10.0</TargetFramework>
+        <TargetFramework>net10.0-windows</TargetFramework>
+        <UseWindowsForms>true</UseWindowsForms>
         <ApplicationIcon>Assets\cheems.ico</ApplicationIcon>
         <!-- 需 .NET 10 SDK 编译；若仍用 VS2022 + 仅 SDK 9 会报 NETSDK1209，请安装 .NET 10 SDK 或用 Rider 自带 SDK。运行须：.NET 10 Desktop Runtime x64 -->
         <RuntimeIdentifier>win-x64</RuntimeIdentifier>
@@ -14,6 +15,12 @@
         <ApplicationManifest>app.manifest</ApplicationManifest>
         <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     </PropertyGroup>
+
+    <ItemGroup>
+        <!-- UseWindowsForms 仅为 Clipboard；勿注入全局 using，避免与 Avalonia 类型冲突 -->
+        <Using Remove="System.Windows.Forms"/>
+        <Using Remove="System.Drawing"/>
+    </ItemGroup>
 
     <ItemGroup>
         <Folder Include="Models\"/>

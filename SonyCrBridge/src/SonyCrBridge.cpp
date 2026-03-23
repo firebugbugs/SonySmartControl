@@ -599,7 +599,18 @@ SONY_CR_API SonyCrStatus SonyCr_EnumCameraDevicesRefresh(void)
         g_enumList = nullptr;
     }
     const CrError st = EnumCameraObjects(&g_enumList);
-    return ToEnumStatus(st);
+    if (CR_FAILED(st))
+    {
+        if (g_enumList != nullptr)
+        {
+            g_enumList->Release();
+            g_enumList = nullptr;
+        }
+        return ToEnumStatus(st);
+    }
+    if (g_enumList == nullptr)
+        return SONY_CR_ERR_ENUM_FAILED;
+    return SONY_CR_OK;
 #endif
 }
 
@@ -1222,6 +1233,190 @@ static CrError WaitRemoteTransferFuture(std::future<void>& fut, std::promise<voi
     return SCRSDK::CrError_None;
 }
 
+static std::string SdkFileBasenameLowerUtf8(const CrInt8* p)
+{
+    if (!p)
+        return {};
+    const char* s = reinterpret_cast<const char*>(p);
+    const std::string full(s);
+    const size_t slash = full.find_last_of("/\\");
+    const std::string base = slash == std::string::npos ? full : full.substr(slash + 1);
+    std::string out = base;
+    for (char& c : out)
+    {
+        const auto uc = static_cast<unsigned char>(c);
+        if (uc <= 127 && c >= 'A' && c <= 'Z')
+            c = static_cast<char>(c + 32);
+    }
+    return out;
+}
+
+#if defined(_WIN32)
+static bool TargetUtf16ToLowerUtf8(const unsigned short* wz, std::string& out)
+{
+    if (!wz || !wz[0])
+        return false;
+    const int n = WideCharToMultiByte(CP_UTF8, 0, reinterpret_cast<LPCWCH>(wz), -1, nullptr, 0, nullptr, nullptr);
+    if (n <= 1)
+        return false;
+    out.resize(static_cast<size_t>(n - 1));
+    WideCharToMultiByte(CP_UTF8, 0, reinterpret_cast<LPCWCH>(wz), -1, out.data(), n, nullptr, nullptr);
+    for (char& c : out)
+    {
+        const auto uc = static_cast<unsigned char>(c);
+        if (uc <= 127 && c >= 'A' && c <= 'Z')
+            c = static_cast<char>(c + 32);
+    }
+    return true;
+}
+#else
+static bool TargetUtf16ToLowerUtf8(const unsigned short* /*wz*/, std::string& /*out*/) { return false; }
+#endif
+
+static bool FindRemoteTransferContentByBasename(
+    const unsigned short* fileNameUtf16, CrSlotNumber& outSlot, CrInt32u& outContentId)
+{
+    std::string target;
+    if (!TargetUtf16ToLowerUtf8(fileNameUtf16, target))
+        return false;
+
+    const CrSlotNumber slots[] = {CrSlotNumber_Slot1, CrSlotNumber_Slot2};
+    for (CrSlotNumber slot : slots)
+    {
+        CrCaptureDate* dateList = nullptr;
+        CrInt32u dateNums = 0;
+        CrError err = SCRSDK::CrError_None;
+        {
+            std::lock_guard lock(g_mutex);
+            if (g_deviceHandle == 0 || !g_callback.connected.load())
+                return false;
+            err = GetRemoteTransferCapturedDateList(g_deviceHandle, slot, &dateList, &dateNums);
+        }
+        if (CR_FAILED(err) || dateList == nullptr || dateNums == 0)
+        {
+            if (dateList != nullptr)
+            {
+                std::lock_guard lock(g_mutex);
+                if (g_deviceHandle != 0)
+                    ReleaseRemoteTransferCapturedDateList(g_deviceHandle, dateList);
+            }
+            continue;
+        }
+
+        bool found = false;
+        for (int di = static_cast<int>(dateNums) - 1; di >= 0; --di)
+        {
+            CrContentsInfo* infoList = nullptr;
+            CrInt32u infoNums = 0;
+            {
+                std::lock_guard lock(g_mutex);
+                if (g_deviceHandle == 0 || !g_callback.connected.load())
+                {
+                    if (g_deviceHandle != 0)
+                        ReleaseRemoteTransferCapturedDateList(g_deviceHandle, dateList);
+                    return false;
+                }
+                err = GetRemoteTransferContentsInfoList(
+                    g_deviceHandle,
+                    slot,
+                    CrGetContentsInfoListType_Range_Day,
+                    &dateList[static_cast<CrInt32u>(di)],
+                    0,
+                    &infoList,
+                    &infoNums);
+            }
+            if (CR_FAILED(err) || infoList == nullptr || infoNums == 0)
+            {
+                if (infoList != nullptr)
+                {
+                    std::lock_guard lock(g_mutex);
+                    if (g_deviceHandle != 0)
+                        ReleaseRemoteTransferContentsInfoList(g_deviceHandle, infoList);
+                }
+                continue;
+            }
+
+            for (CrInt32u ii = 0; ii < infoNums && !found; ++ii)
+            {
+                const CrContentsInfo& ci = infoList[ii];
+                if (ci.files == nullptr || ci.filesNum == 0)
+                    continue;
+                for (CrInt32u fi = 0; fi < ci.filesNum; ++fi)
+                {
+                    const CrContentsFile& f = ci.files[fi];
+                    const std::string base = SdkFileBasenameLowerUtf8(f.filePath);
+                    if (!base.empty() && base == target)
+                    {
+                        outSlot = slot;
+                        outContentId = ci.contentId;
+                        found = true;
+                        break;
+                    }
+                }
+            }
+
+            {
+                std::lock_guard lock(g_mutex);
+                if (g_deviceHandle != 0)
+                    ReleaseRemoteTransferContentsInfoList(g_deviceHandle, infoList);
+            }
+
+            if (found)
+            {
+                std::lock_guard lock(g_mutex);
+                if (g_deviceHandle != 0)
+                    ReleaseRemoteTransferCapturedDateList(g_deviceHandle, dateList);
+                return true;
+            }
+        }
+
+        {
+            std::lock_guard lock(g_mutex);
+            if (g_deviceHandle != 0 && dateList != nullptr)
+                ReleaseRemoteTransferCapturedDateList(g_deviceHandle, dateList);
+        }
+    }
+
+    return false;
+}
+
+static SonyCrStatus DeleteRemoteContentMatchingFileNameUtf16Body(const unsigned short* fileNameUtf16)
+{
+    CrSlotNumber slot = CrSlotNumber_Slot1;
+    CrInt32u contentId = 0;
+    if (!FindRemoteTransferContentByBasename(fileNameUtf16, slot, contentId))
+        return SONY_CR_ERR_NOT_FOUND;
+
+    std::promise<void> prom;
+    std::future<void> fut = prom.get_future();
+    {
+        std::lock_guard<std::mutex> wlk(g_remoteTransferWaitMutex);
+        g_remoteTransferPromise = &prom;
+    }
+
+    CrError delErr = SCRSDK::CrError_None;
+    {
+        std::lock_guard lock(g_mutex);
+        if (g_deviceHandle == 0 || !g_callback.connected.load())
+        {
+            AbandonRemoteTransferPromise(&prom);
+            return SONY_CR_ERR_NOT_CONNECTED;
+        }
+        delErr = DeleteRemoteTransferContentsFile(g_deviceHandle, slot, contentId);
+    }
+
+    if (CR_FAILED(delErr))
+    {
+        AbandonRemoteTransferPromise(&prom);
+        return SONY_CR_ERR_CONTROL_FAILED;
+    }
+
+    if (WaitRemoteTransferFuture(fut, &prom) != SCRSDK::CrError_None)
+        return SONY_CR_ERR_CONTROL_FAILED;
+
+    return SONY_CR_OK;
+}
+
 static bool CaptureDateGreaterUtc(const CrCaptureDate& a, const CrCaptureDate& b)
 {
     if (a.year != b.year)
@@ -1416,6 +1611,18 @@ static bool TryPullLatestStillsViaRemoteTransfer(CrChar* destFolderPath, int pul
     return true;
 }
 #endif
+
+SONY_CR_API SonyCrStatus SonyCr_DeleteRemoteContentMatchingFileNameUtf16(const unsigned short* fileNameUtf16)
+{
+#if SONY_CR_BRIDGE_STUB
+    (void)fileNameUtf16;
+    return SONY_CR_ERR_SDK_NOT_LINKED;
+#else
+    if (!fileNameUtf16 || fileNameUtf16[0] == 0)
+        return SONY_CR_ERR_INVALID_PARAM;
+    return DeleteRemoteContentMatchingFileNameUtf16Body(fileNameUtf16);
+#endif
+}
 
 SONY_CR_API SonyCrStatus SonyCr_PullLatestStillsToFolderUtf16(const unsigned short* destFolderUtf16, int pullCount)
 {

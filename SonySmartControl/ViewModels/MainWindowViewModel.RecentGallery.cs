@@ -430,6 +430,140 @@ public partial class MainWindowViewModel
         });
     }
 
+    /// <summary>与当前回看文件同目录、同主文件名（不含扩展名）的相册格式文件，用于 RAW+JPEG 一并删除。</summary>
+    private static IReadOnlyList<string> ListLocalGalleryFilesSameStem(string primaryPath)
+    {
+        var dir = Path.GetDirectoryName(primaryPath);
+        var stem = Path.GetFileNameWithoutExtension(primaryPath);
+        if (string.IsNullOrEmpty(dir) || string.IsNullOrEmpty(stem) || !Directory.Exists(dir))
+            return Array.Empty<string>();
+
+        var list = new List<string>();
+        foreach (var f in Directory.EnumerateFiles(dir))
+        {
+            if (!string.Equals(Path.GetFileNameWithoutExtension(f), stem, StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (IsGalleryImageExtension(Path.GetExtension(f)))
+                list.Add(f);
+        }
+
+        return list;
+    }
+
+    [RelayCommand]
+    private void CopyPreviewImageToClipboard(string? path)
+    {
+        var targetPath = !string.IsNullOrWhiteSpace(path) ? path : ViewingRecentPhotoPath;
+        if (string.IsNullOrWhiteSpace(targetPath) || !File.Exists(targetPath))
+        {
+            StatusMessage = "未找到可复制的原图文件。";
+            return;
+        }
+
+        try
+        {
+            using var bmp = new System.Drawing.Bitmap(targetPath);
+            System.Windows.Forms.Clipboard.SetImage(bmp);
+            StatusMessage = "已复制图片到剪贴板，可在微信等应用中粘贴。";
+        }
+        catch (Exception ex)
+        {
+            try
+            {
+                if (_staticReviewBitmap == null)
+                {
+                    StatusMessage = "复制失败: " + ex.Message;
+                    return;
+                }
+
+                using var ms = new MemoryStream();
+                _staticReviewBitmap.Save(ms);
+                ms.Position = 0;
+                using var bmp2 = new System.Drawing.Bitmap(ms);
+                System.Windows.Forms.Clipboard.SetImage(bmp2);
+                StatusMessage = "已复制当前显示画面到剪贴板。";
+            }
+            catch (Exception ex2)
+            {
+                StatusMessage = "复制失败: " + ex2.Message;
+            }
+        }
+    }
+
+    [RelayCommand]
+    private async Task DeletePreviewImageAsync(string? path)
+    {
+        var primary = !string.IsNullOrWhiteSpace(path) ? path : ViewingRecentPhotoPath;
+        if (string.IsNullOrWhiteSpace(primary) || !File.Exists(primary))
+        {
+            StatusMessage = "未找到可删除的图片文件。";
+            return;
+        }
+
+        var localPaths = ListLocalGalleryFilesSameStem(primary);
+        if (localPaths.Count == 0)
+            return;
+
+        string? camHint = null;
+        if (IsSessionActive)
+        {
+            var nameForCam = Path.GetFileName(primary);
+            camHint = await Task.Run(() =>
+            {
+                try
+                {
+                    var st = SonyCrSdk.TryDeleteRemoteContentMatchingFileName(nameForCam);
+                    return st switch
+                    {
+                        null => null,
+                        SonyCrStatus.Ok => "机身存储中已删除对应条目。",
+                        SonyCrStatus.ErrNotFound => null,
+                        _ => "机身侧删除未完成（可能仅 MTP 拉取、无 Remote Transfer 匹配）。",
+                    };
+                }
+                catch
+                {
+                    return "机身删除异常，已尝试删除本地文件。";
+                }
+            }).ConfigureAwait(true);
+        }
+
+        foreach (var p in localPaths)
+        {
+            try
+            {
+                File.Delete(p);
+            }
+            catch
+            {
+                // 单文件失败不阻断其余
+            }
+        }
+
+        foreach (var p in localPaths)
+        {
+            var entry = RecentPhotos.FirstOrDefault(e =>
+                string.Equals(e.FilePath, p, StringComparison.OrdinalIgnoreCase));
+            if (entry == null)
+                continue;
+            RecentPhotos.Remove(entry);
+            entry.Dispose();
+        }
+
+        var wasViewing = string.Equals(ViewingRecentPhotoPath, primary, StringComparison.OrdinalIgnoreCase);
+        if (wasViewing)
+        {
+            ShowLiveMonitor();
+            if (RecentPhotos.Count > 0)
+                await ShowRecentPhoto(RecentPhotos[0].FilePath).ConfigureAwait(true);
+        }
+
+        SyncFilmstripThumbnailsSelection();
+        StatusMessage = string.IsNullOrEmpty(camHint)
+            ? "本地文件已删除。"
+            : camHint + " 本地文件已删除。";
+    }
+
     /// <summary>由底部胶片区域 <see cref="SizeChanged"/> 调用；按可视宽度估算条数并防抖后刷新列表。</summary>
     public void NotifyFilmstripHostWidthChanged(double hostWidthPixels)
     {

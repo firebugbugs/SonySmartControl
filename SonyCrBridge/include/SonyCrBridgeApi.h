@@ -33,6 +33,8 @@ typedef int SonyCrStatus;
 #define SONY_CR_ERR_NOT_CONNECTED -7
 #define SONY_CR_ERR_CONTROL_FAILED -8
 #define SONY_CR_ERR_INVALID_PARAM -9
+/** Remote Transfer 列表中未找到与给定文件名（不含路径）匹配的条目。 */
+#define SONY_CR_ERR_NOT_FOUND -10
 #define SONY_CR_ERR_SDK_NOT_LINKED -999
 #define SONY_CR_ERR_NOT_IMPLEMENTED -100
 
@@ -150,6 +152,14 @@ SONY_CR_API SonyCrStatus SonyCr_PullLatestStillToFolderUtf16(const unsigned shor
  * 失败时再回退到 GetDateFolderList + PullContentsFile。
  */
 SONY_CR_API SonyCrStatus SonyCr_PullLatestStillsToFolderUtf16(const unsigned short* destFolderUtf16, int pullCount);
+
+/**
+ * 在已连接且支持 Remote Transfer 列表时：按「保存文件名」（不含路径，如 DSC00001.JPG）查找对应 CrContentsInfo，
+ * 并调用 DeleteRemoteTransferContentsFile（RAW+JPEG 等为同一 contentId，一次删除多文件）。
+ * 异步完成依赖 OnNotifyRemoteTransferResult，与 GetRemoteTransferContentsDataFile 相同。
+ * 未找到匹配时返回 SONY_CR_ERR_NOT_FOUND。
+ */
+SONY_CR_API SonyCrStatus SonyCr_DeleteRemoteContentMatchingFileNameUtf16(const unsigned short* fileNameUtf16);
 
 /**
  * 读取曝光模式、光圈、快门、ISO、白平衡的当前值/可写/候选，序列化为 UTF-8 JSON（含结尾 \\0）。

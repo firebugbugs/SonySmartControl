@@ -38,6 +38,12 @@
             Background="Transparent"
             Cursor="Hand"
             PointerReleased="HitArea_OnPointerReleased">
+        <Border.ContextFlyout>
+            <MenuFlyout ShowMode="Standard">
+                <MenuItem Header="复制" Click="CopyMenuItem_OnClick"/>
+                <MenuItem Header="删除" Click="DeleteMenuItem_OnClick"/>
+            </MenuFlyout>
+        </Border.ContextFlyout>
         <!-- 相对 84×64 按 1.5× 缩放：126×96；缩略图框保持 72:52 → 108×78 -->
         <Grid Width="126" Height="96">
             <Border Width="108"

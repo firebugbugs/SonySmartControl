@@ -93,7 +93,8 @@
                 BorderBrush="#D9DEE8"
                 BorderThickness="1"
                 BoxShadow="0 12 40 0 #28000000">
-            <Grid RowDefinitions="Auto,Auto,*">
+            <Grid RowDefinitions="Auto,Auto,*"
+                  Grid.IsSharedSizeScope="True">
                 <!-- 标题栏：拖拽移动；图标与「页面标题」同排；作者信息仅悬停页面标题时显示 -->
                 <Border x:Name="TitleBarHost"
                         Grid.Row="0"
@@ -110,7 +111,7 @@
                                VerticalAlignment="Center"
                                Source="avares://SonySmartControl/Assets/cheems.ico"
                                IsHitTestVisible="False"/>
-                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Spacing="6">
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Spacing="8">
                             <TextBlock x:Name="AppTitleText"
                                        VerticalAlignment="Center"
                                        FontSize="15"
@@ -126,6 +127,20 @@
                                     </StackPanel>
                                 </ToolTip.Tip>
                             </TextBlock>
+                            <Border MinWidth="56"
+                                    Height="24"
+                                    Padding="10,0"
+                                    CornerRadius="12"
+                                    Background="{Binding CameraConnectionBadgeBackground}"
+                                    VerticalAlignment="Center">
+                                <TextBlock Text="{Binding CameraConnectionBadgeText}"
+                                           Foreground="{Binding CameraConnectionBadgeForeground}"
+                                           FontSize="12"
+                                           FontWeight="SemiBold"
+                                           ToolTip.Tip="{Binding CameraConnectionTooltip}"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"/>
+                            </Border>
                         </StackPanel>
                         <StackPanel Grid.Column="3"
                                     Orientation="Horizontal"
@@ -170,26 +185,92 @@
                     </Grid>
                 </Border>
 
-                <!-- 工具行：连接 / 状态（不再与整行标题共享 Tooltip 命中区） -->
+                <!-- 工具行：左侧连接/状态不占用右侧栏宽度；右上与侧栏列对齐：拍照/摄影切换 -->
                 <Border Grid.Row="1" Padding="16,12,16,0" Background="Transparent">
-                    <StackPanel Orientation="Horizontal" Spacing="10">
-                        <Button Classes="chrome-text"
-                                Content="连接"
-                                Command="{Binding ConnectCommand}"
-                                IsEnabled="{Binding IsConnectEnabled}"/>
-                        <Button Classes="chrome-text"
-                                Content="断开"
-                                Command="{Binding DisconnectCommand}"
-                                IsEnabled="{Binding IsDisconnectEnabled}"/>
-                        <TextBlock VerticalAlignment="Center"
-                                   Text="{Binding StatusMessage}"
-                                   TextWrapping="Wrap"
-                                   Foreground="#4B5260"/>
-                    </StackPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="6"/>
+                            <ColumnDefinition Width="280"
+                                              MinWidth="240"
+                                              SharedSizeGroup="RightSidebarWidth"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0"
+                                    Orientation="Horizontal"
+                                    Spacing="10"
+                                    VerticalAlignment="Top">
+                            <Button Classes="chrome-text"
+                                    Content="连接"
+                                    Command="{Binding ConnectCommand}"
+                                    IsEnabled="{Binding IsConnectEnabled}"/>
+                            <Button Classes="chrome-text"
+                                    Content="断开"
+                                    Command="{Binding DisconnectCommand}"
+                                    IsEnabled="{Binding IsDisconnectEnabled}"/>
+                            <TextBlock VerticalAlignment="Center"
+                                       Text="{Binding StatusMessage}"
+                                       TextWrapping="Wrap"
+                                       Foreground="#4B5260"/>
+                        </StackPanel>
+                        <Border Grid.Column="2"
+                                VerticalAlignment="Top"
+                                CornerRadius="10"
+                                Background="#E8EBF2"
+                                Padding="3"
+                                ClipToBounds="True">
+                            <Grid ColumnDefinitions="*,*">
+                                <Border Grid.Column="0"
+                                        Margin="0,0,2,0"
+                                        CornerRadius="8,3,3,8"
+                                        Background="#D4E8FC"
+                                        IsVisible="{Binding IsPhotoSidebarMode}"/>
+                                <Border Grid.Column="1"
+                                        Margin="2,0,0,0"
+                                        CornerRadius="3,8,8,3"
+                                        Background="#D4E8FC"
+                                        IsVisible="{Binding IsVideoSidebarMode}"/>
+                                <Grid Grid.Column="0" Grid.ColumnSpan="2" ColumnDefinitions="*,*">
+                                    <Button Grid.Column="0"
+                                            Classes="chrome-text"
+                                            Content="拍照"
+                                            Command="{Binding SelectPhotoSidebarModeCommand}"
+                                            HorizontalAlignment="Stretch"
+                                            HorizontalContentAlignment="Center"
+                                            Padding="10,8"
+                                            Background="Transparent"
+                                            BorderThickness="0"/>
+                                    <Button Grid.Column="1"
+                                            Classes="chrome-text"
+                                            Content="摄影"
+                                            Command="{Binding SelectVideoSidebarModeCommand}"
+                                            HorizontalAlignment="Stretch"
+                                            HorizontalContentAlignment="Center"
+                                            Padding="10,8"
+                                            Background="Transparent"
+                                            BorderThickness="0"/>
+                                </Grid>
+                            </Grid>
+                        </Border>
+                    </Grid>
                 </Border>
 
-                <Grid Grid.Row="2" Margin="16" ColumnDefinitions="*,280" ColumnSpacing="12">
-                        <Grid Grid.Column="0" RowDefinitions="*,Auto" RowSpacing="8">
+                <Grid Grid.Row="2" Margin="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"
+                                              MinWidth="420"/>
+                            <ColumnDefinition Width="6"/>
+                            <ColumnDefinition Width="280"
+                                              MinWidth="240"
+                                              SharedSizeGroup="RightSidebarWidth"/>
+                        </Grid.ColumnDefinitions>
+                        <Grid Grid.Column="0" MinHeight="0">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="4*"
+                                               MinHeight="220"/>
+                                <RowDefinition Height="6"/>
+                                <RowDefinition Height="1.2*"
+                                               MinHeight="110"/>
+                            </Grid.RowDefinitions>
                             <!-- 预览框与底部胶片条分离：预览仅含实时画面与叠加层 -->
                                 <Border x:Name="PreviewBorder"
                                         Grid.Row="0"
@@ -241,8 +322,19 @@
                                     </Grid>
                                 </Border>
 
+                                <GridSplitter Grid.Row="1"
+                                              Height="6"
+                                              Margin="16,0,16,0"
+                                              HorizontalAlignment="Stretch"
+                                              VerticalAlignment="Stretch"
+                                              ResizeDirection="Rows"
+                                              ResizeBehavior="PreviousAndNext"
+                                              Cursor="SizeNorthSouth"
+                                              Background="#01000000"
+                                              BorderThickness="0"/>
+
                                 <Border x:Name="RecentFilmstripBar"
-                                        Grid.Row="1"
+                                        Grid.Row="2"
                                         CornerRadius="12"
                                         Background="#FFFFFF"
                                         BorderBrush="#D9DEE8"
@@ -284,12 +376,26 @@
                                                                       Grid.Column="1"
                                                                       SizeChanged="FilmstripPhotos_OnSizeChanged"
                                                                       ItemsSource="{Binding RecentPhotos}"
-                                                                      SelectCommand="{Binding ShowRecentPhotoCommand}"/>
+                                                                      SelectCommand="{Binding ShowRecentPhotoCommand}"
+                                                                      CopyCommand="{Binding CopyPreviewImageToClipboardCommand}"
+                                                                      DeleteCommand="{Binding DeletePreviewImageCommand}"/>
                                     </Grid>
                                 </Border>
                         </Grid>
 
-                        <Grid Grid.Column="1" RowDefinitions="Auto,Auto,*" RowSpacing="10">
+                        <GridSplitter Grid.Column="1"
+                                      Width="6"
+                                      Margin="0,10,0,10"
+                                      HorizontalAlignment="Stretch"
+                                      VerticalAlignment="Stretch"
+                                      ResizeDirection="Columns"
+                                      ResizeBehavior="PreviousAndNext"
+                                      Cursor="SizeWestEast"
+                                      Background="#01000000"
+                                      BorderThickness="0"/>
+
+                        <Grid Grid.Column="2" MinHeight="0">
+                                <Grid RowDefinitions="Auto,Auto,*" RowSpacing="10" IsVisible="{Binding IsPhotoSidebarMode}">
                                 <StackPanel Grid.Row="0" Spacing="8">
                                     <TextBlock FontWeight="SemiBold" Foreground="#1F2430" Text="遥控拍摄"/>
                                     <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
@@ -544,6 +650,21 @@
                                         </Expander>
                                     </StackPanel>
                                 </ScrollViewer>
+                                </Grid>
+                                <Border CornerRadius="12"
+                                        Background="#FFFFFF"
+                                        BorderBrush="#D9DEE8"
+                                        BorderThickness="1"
+                                        Padding="24"
+                                        VerticalAlignment="Stretch"
+                                        HorizontalAlignment="Stretch"
+                                        IsVisible="{Binding IsVideoSidebarMode}">
+                                    <TextBlock Text="开发中"
+                                               FontSize="15"
+                                               Foreground="#6B7280"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center"/>
+                                </Border>
                             </Grid>
                 </Grid>
             </Grid>

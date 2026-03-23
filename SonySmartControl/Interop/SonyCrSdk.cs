@@ -420,6 +420,13 @@ public static class SonyCrSdk
         SendCommand(CrSdkCommandIds.CancelRemoteTouchOperation, CrSdkCommandParam.Up);
     }
 
+    /// <summary>
+    /// 在已连接且支持 Remote Transfer 列表时，按<strong>文件名（不含路径）</strong>删除机身中对应内容（RAW+JPEG 等为同一 contentId）。
+    /// 旧桥接 DLL 无导出时返回 null；列表无匹配为 <see cref="SonyCrStatus.ErrNotFound"/>。
+    /// </summary>
+    public static SonyCrStatus? TryDeleteRemoteContentMatchingFileName(string fileNameOnly) =>
+        SonyCrBridgeNative.TryDeleteRemoteContentMatchingFileName(fileNameOnly);
+
     private static void ThrowIfFailed(int st, string operation)
     {
         if (st == (int)SonyCrStatus.Ok)

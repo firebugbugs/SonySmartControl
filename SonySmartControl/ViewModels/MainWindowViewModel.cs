@@ -99,24 +99,54 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     [NotifyPropertyChangedFor(nameof(IsDisconnectEnabled))]
     [NotifyPropertyChangedFor(nameof(ShootingPanelVisible))]
     [NotifyPropertyChangedFor(nameof(IsSdkAfFramesOverlayVisible))]
+    [NotifyPropertyChangedFor(nameof(CameraConnectionBadgeText))]
+    [NotifyPropertyChangedFor(nameof(CameraConnectionBadgeBackground))]
+    [NotifyPropertyChangedFor(nameof(CameraConnectionBadgeForeground))]
+    [NotifyPropertyChangedFor(nameof(CameraConnectionTooltip))]
     private bool _isSessionActive;
 
     /// <summary>连接 CrSDK 进行中（阻塞在后台线程，用于禁用「连接」与状态提示）。</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsConnectEnabled))]
+    [NotifyPropertyChangedFor(nameof(CameraConnectionBadgeText))]
+    [NotifyPropertyChangedFor(nameof(CameraConnectionBadgeBackground))]
+    [NotifyPropertyChangedFor(nameof(CameraConnectionBadgeForeground))]
+    [NotifyPropertyChangedFor(nameof(CameraConnectionTooltip))]
     private bool _isConnecting;
 
-    [ObservableProperty] private string _saveDirectory;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CameraConnectionTooltip))]
+    private string _saveDirectory;
 
-    [ObservableProperty] private int _captureFormatIndex;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CameraConnectionTooltip))]
+    private int _captureFormatIndex;
 
     [ObservableProperty] private string _fileNamePrefix;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CameraConnectionTooltip))]
+    private string _connectedCameraModelName = "未知";
 
     public bool IsConnectEnabled => !IsSessionActive && !IsConnecting;
 
     public bool IsDisconnectEnabled => IsSessionActive;
 
     public bool ShootingPanelVisible => IsSessionActive;
+    public string CameraConnectionBadgeText =>
+        IsConnecting ? "连接中" : IsSessionActive ? "已连接" : "未连接";
+    public string CameraConnectionBadgeBackground =>
+        IsConnecting ? "#FFF6DE" : IsSessionActive ? "#DDF6E9" : "#ECEFF4";
+    public string CameraConnectionBadgeForeground =>
+        IsConnecting ? "#9A6A00" : IsSessionActive ? "#0E7A43" : "#6B7280";
+    private string CaptureFormatLabel =>
+        CaptureFormatIndex switch
+        {
+            1 => "RAW",
+            2 => "RAW + JPEG",
+            _ => "JPEG",
+        };
+    public string CameraConnectionTooltip =>
+        $"状态：{CameraConnectionBadgeText}\n型号：{(string.IsNullOrWhiteSpace(ConnectedCameraModelName) ? "未知" : ConnectedCameraModelName)}\n保存目录：{SaveDirectory}\n保存格式：{CaptureFormatLabel}";
 
     /// <summary>构图辅助线下拉项（顺序与 <see cref="GuideOverlayIndex"/> 一致）。</summary>
     public ObservableCollection<string> GuideOverlayChoices { get; } = new(
@@ -129,6 +159,16 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     [ObservableProperty] private bool _exposureSectionExpanded = true;
 
     [ObservableProperty] private bool _auxDisplaySectionExpanded = true;
+
+    /// <summary>右侧遥控区：0=拍照，1=摄影。</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsPhotoSidebarMode))]
+    [NotifyPropertyChangedFor(nameof(IsVideoSidebarMode))]
+    private int _remoteSidebarMode;
+
+    public bool IsPhotoSidebarMode => RemoteSidebarMode == 0;
+
+    public bool IsVideoSidebarMode => RemoteSidebarMode == 1;
 
     private ICameraPreviewSession? _session;
     private Bitmap? _lastFrameOwner;
@@ -166,6 +206,12 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         ExposureSectionExpanded = false;
         AuxDisplaySectionExpanded = false;
     }
+
+    [RelayCommand]
+    private void SelectPhotoSidebarMode() => RemoteSidebarMode = 0;
+
+    [RelayCommand]
+    private void SelectVideoSidebarMode() => RemoteSidebarMode = 1;
 
     [RelayCommand]
     private async Task BrowseSaveFolder()
@@ -862,6 +908,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
 
         IsConnecting = true;
         StatusMessage = "正在连接相机，请稍候…";
+        ConnectedCameraModelName = "未知";
 
         var session = new CrSdkCameraPreviewSession();
 
@@ -891,6 +938,9 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
 
             _session = session;
             IsSessionActive = true;
+            ConnectedCameraModelName = string.IsNullOrWhiteSpace(session.ConnectedCameraModel)
+                ? "未知"
+                : session.ConnectedCameraModel;
             IsConnecting = false;
 
             try
@@ -962,6 +1012,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         {
             ClearPreview();
             IsSessionActive = false;
+            ConnectedCameraModelName = "未知";
         });
     }
 
