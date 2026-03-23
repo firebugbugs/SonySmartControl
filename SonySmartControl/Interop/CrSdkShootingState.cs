@@ -32,6 +32,10 @@ public sealed class CrSdkShootingState
 
     /// <summary>静态拍照驱动模式：单张 / 连拍 / 延时等（JSON 键 <c>drv</c>，CrDeviceProperty_DriveMode）。</summary>
     public CrSdkShootingPropertySnapshot? DriveMode { get; init; }
+    /// <summary>闪光灯模式（JSON 键 <c>flm</c>）。</summary>
+    public CrSdkShootingPropertySnapshot? FlashMode { get; init; }
+    /// <summary>闪光灯补偿（JSON 键 <c>flc</c>，EV×1000）。</summary>
+    public CrSdkShootingPropertySnapshot? FlashCompensation { get; init; }
 
     public static bool TryParse(string? json, out CrSdkShootingState? state)
     {
@@ -56,6 +60,8 @@ public sealed class CrSdkShootingState
                 DispMode = ReadProp(root, "dm"),
                 ShutterType = ReadProp(root, "st"),
                 DriveMode = ReadProp(root, "drv"),
+                FlashMode = ReadProp(root, "flm"),
+                FlashCompensation = ReadProp(root, "flc"),
             };
             return true;
         }

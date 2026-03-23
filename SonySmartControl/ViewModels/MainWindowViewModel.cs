@@ -123,6 +123,27 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     private int _captureFormatIndex;
 
     [ObservableProperty] private string _fileNamePrefix;
+
+    [ObservableProperty] private string _timelapseSaveDirectory;
+
+    [ObservableProperty] private int _timelapseIntervalSeconds;
+
+    [ObservableProperty] private bool _isTimelapseRunning;
+
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(TimelapseProgressText))]
+    private int _timelapseTargetFrames;
+
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(TimelapseProgressText))]
+    private int _timelapseCapturedFrames;
+
+    [ObservableProperty] private bool _isTimelapsePaused;
+    [ObservableProperty] private bool _isTimelapseStopping;
+
+    [ObservableProperty] private string _timelapseProgressText = "";
+
+    private DispatcherTimer? _timelapseProgressTimer;
+    private int _timelapseRunningIntervalSeconds;
+    private int _timelapseRunningTargetFrames;
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CameraConnectionTooltip))]
     private string _connectedCameraModelName = "未知";
@@ -132,6 +153,8 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     public bool IsDisconnectEnabled => IsSessionActive;
 
     public bool ShootingPanelVisible => IsSessionActive;
+
+    public Func<Task<string?>>? PickTimelapseSaveFolderAsync { get; set; }
     public string CameraConnectionBadgeText =>
         IsConnecting ? "连接中" : IsSessionActive ? "已连接" : "未连接";
     public string CameraConnectionBadgeBackground =>
@@ -157,6 +180,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     [ObservableProperty] private bool _generalSectionExpanded = true;
 
     [ObservableProperty] private bool _exposureSectionExpanded = true;
+    [ObservableProperty] private bool _flashSectionExpanded = true;
 
     [ObservableProperty] private bool _auxDisplaySectionExpanded = true;
 
@@ -180,6 +204,9 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         _saveDirectory = s.SaveDirectory;
         _captureFormatIndex = s.CaptureFormatIndex;
         _fileNamePrefix = s.FileNamePrefix;
+        _timelapseSaveDirectory = s.TimelapseSaveDirectory;
+        _timelapseIntervalSeconds = Math.Max(2, s.TimelapseIntervalSeconds);
+        _timelapseTargetFrames = Math.Max(0, s.TimelapseTargetFrames);
         _showHistogram = s.ShowHistogram ?? true;
         _guideOverlayIndex = s.GuideOverlayIndex;
         _persistEnabled = true;
@@ -195,6 +222,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         SaveSectionExpanded = true;
         GeneralSectionExpanded = true;
         ExposureSectionExpanded = true;
+        FlashSectionExpanded = true;
         AuxDisplaySectionExpanded = true;
     }
 
@@ -204,6 +232,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         SaveSectionExpanded = false;
         GeneralSectionExpanded = false;
         ExposureSectionExpanded = false;
+        FlashSectionExpanded = false;
         AuxDisplaySectionExpanded = false;
     }
 
@@ -259,6 +288,420 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         catch (Exception ex)
         {
             StatusMessage = "无法打开文件夹: " + ex.Message;
+        }
+    }
+
+    [RelayCommand]
+    private async Task BrowseTimelapseSaveFolder()
+    {
+        if (PickTimelapseSaveFolderAsync == null)
+        {
+            StatusMessage = "无法打开延时摄影目录选择器（视图未就绪）。";
+            return;
+        }
+
+        try
+        {
+            var path = await PickTimelapseSaveFolderAsync().ConfigureAwait(true);
+            if (!string.IsNullOrWhiteSpace(path))
+                TimelapseSaveDirectory = path;
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = ex.Message;
+        }
+    }
+
+    [RelayCommand]
+    private void OpenTimelapseSaveFolder()
+    {
+        try
+        {
+            var raw = TimelapseSaveDirectory?.Trim();
+            if (string.IsNullOrEmpty(raw))
+            {
+                StatusMessage = "请先填写或选择延时摄影保存目录。";
+                return;
+            }
+
+            var full = Path.GetFullPath(raw);
+            if (!Directory.Exists(full))
+            {
+                StatusMessage = "该延时摄影文件夹尚不存在，请先创建或选择有效路径。";
+                return;
+            }
+
+            Process.Start(
+                new ProcessStartInfo { FileName = full, UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = "无法打开延时摄影文件夹: " + ex.Message;
+        }
+    }
+
+    private bool CanStartTimelapse() =>
+        IsSessionActive && !_captureTaskActive && !IsTimelapseRunning && !IsTimelapseStopping;
+
+    private bool CanPauseTimelapse() =>
+        IsSessionActive && IsTimelapseRunning && !IsTimelapsePaused && !IsTimelapseStopping;
+
+    private bool CanContinueTimelapse() =>
+        IsSessionActive && IsTimelapseRunning && IsTimelapsePaused && !IsTimelapseStopping;
+
+    private bool CanStopTimelapse() =>
+        IsSessionActive && IsTimelapseRunning && !IsTimelapseStopping;
+
+    private void StartTimelapseProgressTimer()
+    {
+        if (_timelapseProgressTimer == null)
+        {
+            _timelapseProgressTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromSeconds(1),
+            };
+
+            _timelapseProgressTimer.Tick += (_, _) => UpdateTimelapseProgressText();
+        }
+
+        _timelapseProgressTimer.Start();
+    }
+
+    private void StopTimelapseProgressTimer() => _timelapseProgressTimer?.Stop();
+
+    private void UpdateTimelapseProgressText()
+    {
+        if (!IsTimelapseRunning)
+        {
+            TimelapseProgressText = "";
+            return;
+        }
+
+        if (_timelapseRunningTargetFrames <= 0)
+        {
+            TimelapseProgressText = $"已拍摄 {TimelapseCapturedFrames} 张（无限制）";
+            return;
+        }
+
+        if (IsTimelapsePaused)
+        {
+            TimelapseProgressText =
+                $"已暂停：已拍摄 {TimelapseCapturedFrames}/{_timelapseRunningTargetFrames} 张。";
+            return;
+        }
+
+        // 首帧在开始后立刻拍一次（和按钮点击同一轮），所以剩余的“间隔次数”应为 (目标 - 已拍 - 1)。
+        var remainingShots = TimelapseCapturedFrames <= 0
+            ? Math.Max(0, _timelapseRunningTargetFrames - 1)
+            : Math.Max(0, _timelapseRunningTargetFrames - TimelapseCapturedFrames);
+        var intervalSeconds = Math.Max(TimelapseMinIntervalSeconds, _timelapseRunningIntervalSeconds);
+        var remaining = TimeSpan.FromSeconds((long)remainingShots * intervalSeconds);
+
+        var now = DateTime.Now;
+        var endAt = now + remaining;
+
+        var remainText = FormatDuration(remaining);
+        var endText = FormatEndAt(endAt, now);
+
+        TimelapseProgressText =
+            $"已拍摄 {TimelapseCapturedFrames}/{_timelapseRunningTargetFrames} 张，剩余 {remainText}；预计结束 {endText}";
+    }
+
+    private static string FormatDuration(TimeSpan duration)
+    {
+        if (duration.TotalSeconds <= 0)
+            return "0秒";
+
+        if (duration.TotalMinutes < 60)
+            return $"{duration.Minutes}分{duration.Seconds}秒";
+
+        if (duration.TotalHours < 24)
+            return $"{duration.Hours}小时{duration.Minutes}分{duration.Seconds}秒";
+
+        // 跨天也展示完整日时，避免用户只看到小时数不知何时结束。
+        return $"{(int)duration.TotalDays}天{duration.Hours}小时{duration.Minutes}分{duration.Seconds}秒";
+    }
+
+    private static string FormatEndAt(DateTime endAt, DateTime now)
+    {
+        if (endAt.Date == now.Date)
+            return endAt.ToString("HH:mm:ss");
+
+        if (endAt.Year == now.Year)
+            return endAt.ToString("MM-dd HH:mm:ss");
+
+        return endAt.ToString("yyyy-MM-dd HH:mm:ss");
+    }
+
+    [RelayCommand(CanExecute = nameof(CanStartTimelapse))]
+    private async Task StartTimelapseAsync()
+    {
+        if (!CanCrSdkCameraOps() || _session == null)
+        {
+            StatusMessage = "未连接相机，无法开始延时摄影。";
+            return;
+        }
+
+        var dir = TimelapseSaveDirectory?.Trim();
+        if (string.IsNullOrWhiteSpace(dir))
+        {
+            StatusMessage = "请先填写或选择延时摄影保存目录。";
+            return;
+        }
+
+        try
+        {
+            Directory.CreateDirectory(dir);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = "无法创建延时摄影目录: " + ex.Message;
+            return;
+        }
+
+        var intervalSeconds = Math.Max(TimelapseMinIntervalSeconds, TimelapseIntervalSeconds);
+        var targetFrames = Math.Max(0, TimelapseTargetFrames);
+        var fileType = IndexToFileType(CaptureFormatIndex);
+        var prefix = FileNamePrefix;
+
+        lock (_timelapseGate)
+        {
+            _timelapseCts = new CancellationTokenSource();
+            var ct = _timelapseCts.Token;
+
+            _timelapseRunningIntervalSeconds = intervalSeconds;
+            _timelapseRunningTargetFrames = targetFrames;
+
+            IsTimelapseRunning = true;
+            IsTimelapsePaused = false;
+            IsTimelapseStopping = false;
+            TimelapseCapturedFrames = 0;
+            SetCaptureTaskActive(true); // 禁止预览触摸对焦/半按等，避免与快门 S1 争用
+            _timelapsePauseTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _timelapsePauseTcs.TrySetResult(true);
+
+            _timelapseLoopTask = TimelapseLoopAsync(
+                intervalSeconds,
+                targetFrames,
+                fileType,
+                prefix,
+                dir,
+                ct);
+        }
+
+        StatusMessage = targetFrames <= 0
+            ? $"延时摄影已开始：间隔 {intervalSeconds} 秒（无限制）；保存到：{dir}"
+            : $"延时摄影已开始：间隔 {intervalSeconds} 秒；目标 {targetFrames} 张；保存到：{dir}";
+
+        UpdateTimelapseProgressText();
+        StartTimelapseProgressTimer();
+    }
+
+    [RelayCommand(CanExecute = nameof(CanPauseTimelapse))]
+    private void PauseTimelapse()
+    {
+        lock (_timelapseGate)
+        {
+            if (!CanPauseTimelapse())
+                return;
+
+            IsTimelapsePaused = true;
+            _timelapsePauseTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        }
+
+        StatusMessage = "延时摄影已暂停。";
+        StopTimelapseProgressTimer();
+        UpdateTimelapseProgressText();
+    }
+
+    [RelayCommand(CanExecute = nameof(CanContinueTimelapse))]
+    private void ContinueTimelapse()
+    {
+        TaskCompletionSource<bool>? tcs;
+        lock (_timelapseGate)
+        {
+            if (!CanContinueTimelapse())
+                return;
+
+            IsTimelapsePaused = false;
+            tcs = _timelapsePauseTcs;
+        }
+
+        tcs?.TrySetResult(true);
+        StatusMessage = "延时摄影已继续。";
+        UpdateTimelapseProgressText();
+        StartTimelapseProgressTimer();
+    }
+
+    [RelayCommand(CanExecute = nameof(CanStopTimelapse))]
+    private async Task StopTimelapseAsync()
+    {
+        await StopTimelapseInternalAsync().ConfigureAwait(true);
+        StatusMessage = "延时摄影已停止。";
+    }
+
+    private async Task StopTimelapseInternalAsync()
+    {
+        CancellationTokenSource? cts;
+        Task? loop;
+        lock (_timelapseGate)
+        {
+            if (IsTimelapseStopping)
+                return;
+
+            IsTimelapseStopping = true;
+
+            cts = _timelapseCts;
+            loop = _timelapseLoopTask;
+
+            _timelapseCts = null;
+            _timelapseLoopTask = null;
+        }
+
+        StopTimelapseProgressTimer();
+        TimelapseProgressText = "";
+        _timelapseRunningIntervalSeconds = 0;
+        _timelapseRunningTargetFrames = 0;
+
+        if (cts == null)
+        {
+            IsTimelapseStopping = false;
+            return;
+        }
+
+        try
+        {
+            cts.Cancel();
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            if (loop != null)
+                await loop.ConfigureAwait(false);
+        }
+        catch
+        {
+            // 忽略：取消/断开时不应影响 UI
+        }
+
+        try
+        {
+            cts.Dispose();
+        }
+        catch
+        {
+        }
+    }
+
+    private async Task TimelapseLoopAsync(
+        int intervalSeconds,
+        int targetFrames,
+        CrSdkFileType fileType,
+        string prefix,
+        string saveDirectory,
+        CancellationToken ct)
+    {
+        try
+        {
+            var captured = 0;
+            while (!ct.IsCancellationRequested)
+            {
+                await WaitForTimelapseUnpausedAsync(ct).ConfigureAwait(true);
+                if (ct.IsCancellationRequested)
+                    break;
+
+                await TimelapseCaptureOnceAsync(saveDirectory, fileType, prefix, ct).ConfigureAwait(true);
+                captured++;
+
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    TimelapseCapturedFrames = captured;
+                    StatusMessage = targetFrames <= 0
+                        ? $"延时摄影：已拍摄 {captured} 张。"
+                        : $"延时摄影：已拍摄 {captured}/{targetFrames} 张。";
+                    UpdateTimelapseProgressText();
+                });
+
+                if (targetFrames > 0 && captured >= targetFrames)
+                {
+                    await Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        StatusMessage = $"延时摄影已完成：{captured} 张。";
+                        TimelapseProgressText =
+                            $"已拍摄 {captured}/{targetFrames} 张，已完成（{FormatEndAt(DateTime.Now, DateTime.Now)}）。";
+                    });
+                    break;
+                }
+
+                await Task.Delay(TimeSpan.FromSeconds(intervalSeconds), ct).ConfigureAwait(true);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = "延时摄影失败: " + ex.Message;
+        }
+        finally
+        {
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                IsTimelapseRunning = false;
+                IsTimelapsePaused = false;
+                IsTimelapseStopping = false;
+                StopTimelapseProgressTimer();
+                try
+                {
+                    SetCaptureTaskActive(false);
+                }
+                catch
+                {
+                }
+            });
+        }
+    }
+
+    private Task WaitForTimelapseUnpausedAsync(CancellationToken ct)
+    {
+        Task pauseTask;
+        lock (_timelapseGate)
+        {
+            pauseTask = _timelapsePauseTcs?.Task ?? Task.CompletedTask;
+        }
+
+        return pauseTask.WaitAsync(ct);
+    }
+
+    private async Task TimelapseCaptureOnceAsync(
+        string saveDirectory,
+        CrSdkFileType fileType,
+        string prefix,
+        CancellationToken ct)
+    {
+        // 与半按/释放等 S1 相关操作串行化，避免 ErrControlFailed(-8)
+        await _shutterPipelineLock.WaitAsync(ct).ConfigureAwait(true);
+        try
+        {
+            if (_session == null)
+                return;
+
+            await _session
+                .CaptureStillAsync(saveDirectory, prefix, fileType, ct)
+                .ConfigureAwait(true);
+        }
+        finally
+        {
+            try
+            {
+                _shutterPipelineLock.Release();
+            }
+            catch
+            {
+            }
         }
     }
 
@@ -329,6 +772,13 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     /// 从「拍照键按下」到释放快门、冷却结束整段完成前为 true；期间拒绝新的对焦/预览半按指令。
     /// </summary>
     private volatile bool _captureTaskActive;
+
+    private CancellationTokenSource? _timelapseCts;
+    private Task? _timelapseLoopTask;
+
+    private const int TimelapseMinIntervalSeconds = 2;
+    private readonly object _timelapseGate = new();
+    private TaskCompletionSource<bool>? _timelapsePauseTcs;
 
     /// <summary>已连接且当前无进行中的拍照任务时，侧栏「对焦」「拍照」可用（半按对焦期间须保持为 true，否则 IsEnabled=false 会失捕并误判取消半按）。</summary>
     public bool ShutterActionButtonsEnabled => IsSessionActive && !_captureTaskActive;
@@ -762,6 +1212,31 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         ScheduleSyncSaveSettingsToCameraDebounced();
     }
 
+    partial void OnTimelapseSaveDirectoryChanged(string value)
+    {
+        if (_persistEnabled)
+            UserCameraSettingsStore.Save(ToSettings());
+    }
+
+    partial void OnTimelapseIntervalSecondsChanged(int value)
+    {
+        const int minSeconds = 2;
+        if (value < minSeconds && TimelapseIntervalSeconds != minSeconds)
+            TimelapseIntervalSeconds = minSeconds;
+
+        if (_persistEnabled)
+            UserCameraSettingsStore.Save(ToSettings());
+    }
+
+    partial void OnTimelapseTargetFramesChanged(int value)
+    {
+        if (value < 0 && TimelapseTargetFrames != 0)
+            TimelapseTargetFrames = 0;
+
+        if (_persistEnabled)
+            UserCameraSettingsStore.Save(ToSettings());
+    }
+
     partial void OnCaptureFormatIndexChanged(int value)
     {
         if (_persistEnabled)
@@ -813,6 +1288,34 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         DismissPreviewTouchFocusCommand.NotifyCanExecuteChanged();
         UpdateShootingPollForSession();
         OnPropertyChanged(nameof(ShutterActionButtonsEnabled));
+
+        StartTimelapseCommand.NotifyCanExecuteChanged();
+        PauseTimelapseCommand.NotifyCanExecuteChanged();
+        ContinueTimelapseCommand.NotifyCanExecuteChanged();
+        StopTimelapseCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnIsTimelapseRunningChanged(bool value)
+    {
+        StartTimelapseCommand.NotifyCanExecuteChanged();
+        PauseTimelapseCommand.NotifyCanExecuteChanged();
+        ContinueTimelapseCommand.NotifyCanExecuteChanged();
+        StopTimelapseCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnIsTimelapsePausedChanged(bool value)
+    {
+        PauseTimelapseCommand.NotifyCanExecuteChanged();
+        ContinueTimelapseCommand.NotifyCanExecuteChanged();
+        StopTimelapseCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnIsTimelapseStoppingChanged(bool value)
+    {
+        StartTimelapseCommand.NotifyCanExecuteChanged();
+        PauseTimelapseCommand.NotifyCanExecuteChanged();
+        ContinueTimelapseCommand.NotifyCanExecuteChanged();
+        StopTimelapseCommand.NotifyCanExecuteChanged();
     }
 
     partial void OnShowFocusReticleChanged(bool value)
@@ -890,6 +1393,9 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             FileNamePrefix = FileNamePrefix,
             ShowHistogram = ShowHistogram,
             GuideOverlayIndex = GuideOverlayIndex,
+            TimelapseSaveDirectory = TimelapseSaveDirectory,
+            TimelapseIntervalSeconds = TimelapseIntervalSeconds,
+            TimelapseTargetFrames = TimelapseTargetFrames,
         };
 
     private static CrSdkFileType IndexToFileType(int index) =>
@@ -992,6 +1498,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     /// <summary>停止拍摄轮询、断开并释放相机会话（关窗口与「断开」共用）。</summary>
     private async Task ShutdownCameraSessionAsync()
     {
+        await StopTimelapseInternalAsync().ConfigureAwait(true);
         await ReleaseAnyShutterHalfPressAsync().ConfigureAwait(true);
 
         StopShootingPoll();

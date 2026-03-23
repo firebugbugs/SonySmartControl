@@ -60,6 +60,12 @@ public partial class MainWindowViewModel
     [ObservableProperty] private int _selectedFocusModeIndex = -1;
 
     [ObservableProperty] private bool _focusModeEnabled;
+    [ObservableProperty] private ObservableCollection<ShootingChoiceItem> _flashModeChoices = new();
+    [ObservableProperty] private int _selectedFlashModeIndex = -1;
+    [ObservableProperty] private bool _flashModeEnabled;
+    [ObservableProperty] private ObservableCollection<ShootingChoiceItem> _flashCompensationChoices = new();
+    [ObservableProperty] private int _selectedFlashCompensationIndex = -1;
+    [ObservableProperty] private bool _flashCompensationEnabled;
 
     /// <summary>单张 / 连拍 / 延时自拍（与 <see cref="DriveModeCategoryLabels"/> 下标对应）。</summary>
     [ObservableProperty] private int _selectedDriveCategoryIndex = -1;
@@ -111,6 +117,8 @@ public partial class MainWindowViewModel
     private DateTime? _shootingPollSuppressDmUtc;
 
     private DateTime? _shootingPollSuppressDrvUtc;
+    private DateTime? _shootingPollSuppressFlmUtc;
+    private DateTime? _shootingPollSuppressFlcUtc;
 
     /// <summary>熄屏前一次的非 MonitorOff 模式，用于重新开屏时恢复。</summary>
     private byte? _lastNonOffDispMode;
@@ -183,6 +191,8 @@ public partial class MainWindowViewModel
         _shootingPollSuppressFmUtc = null;
         _shootingPollSuppressDmUtc = null;
         _shootingPollSuppressDrvUtc = null;
+        _shootingPollSuppressFlmUtc = null;
+        _shootingPollSuppressFlcUtc = null;
         _lastNonOffDispMode = null;
         CameraScreenPowerEnabled = false;
         LiveViewEnabledControlEnabled = false;
@@ -198,6 +208,8 @@ public partial class MainWindowViewModel
         IsoEnabled = false;
         ExposureBiasEnabled = false;
         FocusModeEnabled = false;
+        FlashModeEnabled = false;
+        FlashCompensationEnabled = false;
         DriveModeCategoryEnabled = false;
         DriveModeSubRowVisible = false;
         DriveModeOtherHint = "";
@@ -212,6 +224,8 @@ public partial class MainWindowViewModel
             SelectedIsoIndex = -1;
             SelectedExposureBiasIndex = -1;
             SelectedFocusModeIndex = -1;
+            SelectedFlashModeIndex = -1;
+            SelectedFlashCompensationIndex = -1;
             SelectedDriveCategoryIndex = -1;
             SelectedDriveSubIndex = -1;
             ExposureModeChoices.Clear();
@@ -221,6 +235,8 @@ public partial class MainWindowViewModel
             IsoChoices.Clear();
             ExposureBiasChoices.Clear();
             FocusModeChoices.Clear();
+            FlashModeChoices.Clear();
+            FlashCompensationChoices.Clear();
         }
         finally
         {
@@ -334,6 +350,34 @@ public partial class MainWindowViewModel
 
         if (!ShouldSuppressPollBind(ref _shootingPollSuppressDrvUtc))
             ApplyDriveModeFromState(s, allow);
+
+        if (!ShouldSuppressPollBind(ref _shootingPollSuppressFlmUtc))
+        {
+            BindProp(
+                s.FlashMode,
+                FlashModeChoices,
+                CrSdkExposureFormatting.FormatFlashMode,
+                x => SelectedFlashModeIndex = x,
+                () => SelectedFlashModeIndex,
+                allow,
+                true,
+                out var flmEn);
+            FlashModeEnabled = flmEn;
+        }
+
+        if (!ShouldSuppressPollBind(ref _shootingPollSuppressFlcUtc))
+        {
+            BindProp(
+                s.FlashCompensation,
+                FlashCompensationChoices,
+                CrSdkExposureFormatting.FormatFlashCompensation,
+                x => SelectedFlashCompensationIndex = x,
+                () => SelectedFlashCompensationIndex,
+                allow,
+                true,
+                out var flcEn);
+            FlashCompensationEnabled = flcEn;
+        }
 
         ApplyCameraScreenFromState(s, allow);
 
@@ -1079,6 +1123,42 @@ public partial class MainWindowViewModel
                 CrSdkDevicePropertyCodes.FocusMode,
                 NormalizeFocusModeRaw(FocusModeChoices[value].Value),
                 dt);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = ex.Message;
+        }
+    }
+
+    partial void OnSelectedFlashModeIndexChanged(int value)
+    {
+        if (_shootingSyncFromCamera || value < 0 || value >= FlashModeChoices.Count || _lastShootingState?.FlashMode == null)
+            return;
+        MarkUserShootingEdit(ref _shootingPollSuppressFlmUtc);
+        try
+        {
+            SonyCrSdk.SetShootingProperty(
+                CrSdkDevicePropertyCodes.FlashMode,
+                FlashModeChoices[value].Value,
+                _lastShootingState.FlashMode.SetDataType);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = ex.Message;
+        }
+    }
+
+    partial void OnSelectedFlashCompensationIndexChanged(int value)
+    {
+        if (_shootingSyncFromCamera || value < 0 || value >= FlashCompensationChoices.Count || _lastShootingState?.FlashCompensation == null)
+            return;
+        MarkUserShootingEdit(ref _shootingPollSuppressFlcUtc);
+        try
+        {
+            SonyCrSdk.SetShootingProperty(
+                CrSdkDevicePropertyCodes.FlashCompensation,
+                FlashCompensationChoices[value].Value,
+                _lastShootingState.FlashCompensation.SetDataType);
         }
         catch (Exception ex)
         {

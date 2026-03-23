@@ -11,6 +11,8 @@ public static class CrSdkDevicePropertyCodes
 
     /// <summary>CrDeviceProperty_ExposureBiasCompensation（曝光补偿，数值×1000）。</summary>
     public const uint ExposureBiasCompensation = 0x0101;
+    /// <summary>CrDeviceProperty_FlashCompensation（闪光补偿，数值×1000）。</summary>
+    public const uint FlashCompensation = 0x0102;
 
     public const uint ShutterSpeed = 0x0103;
     public const uint IsoSensitivity = 0x0104;
@@ -18,6 +20,8 @@ public static class CrSdkDevicePropertyCodes
 
     /// <summary>CrDeviceProperty_FocusMode（与 CrSDK 枚举一致）。</summary>
     public const uint FocusMode = 0x0109;
+    /// <summary>CrDeviceProperty_FlashMode（自动/关闭/强制/慢速等）。</summary>
+    public const uint FlashMode = 0x010A;
 
     /// <summary>CrDeviceProperty_DriveMode（静态拍照驱动：单张 / 连拍 / 延时等，CrDataType_UInt32Array）。</summary>
     public const uint DriveMode = 0x010E;

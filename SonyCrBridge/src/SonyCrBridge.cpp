@@ -382,7 +382,7 @@ static void AppendProp(
 
 static void BuildShootingStateJson(std::string& out)
 {
-    // 批量 8 项；ShutterType 单独查，避免部分固件对「9 码一批」失败。
+    // 批量 8 项；其余单独查，避免部分固件对大批量查询失败。
     CrInt32u codes[8] = {
         CrDevicePropertyCode::CrDeviceProperty_ExposureProgramMode,
         CrDevicePropertyCode::CrDeviceProperty_FNumber,
@@ -401,7 +401,7 @@ static void BuildShootingStateJson(std::string& out)
     {
         if (propList != nullptr)
             ReleaseDeviceProperties(g_deviceHandle, propList);
-        out = "{\"video\":false,\"ep\":null,\"fn\":null,\"ss\":null,\"iso\":null,\"ev\":null,\"fm\":null,\"rtouch\":null,\"dm\":null,\"st\":null,\"drv\":null}";
+        out = "{\"video\":false,\"ep\":null,\"fn\":null,\"ss\":null,\"iso\":null,\"ev\":null,\"fm\":null,\"rtouch\":null,\"dm\":null,\"st\":null,\"drv\":null,\"flm\":null,\"flc\":null}";
         return;
     }
 
@@ -487,6 +487,24 @@ static void BuildShootingStateJson(std::string& out)
         if (!CR_FAILED(errDrv) && drvOnly != nullptr && nDrvOnly >= 1)
             drv = &drvOnly[0];
     }
+    const CrDeviceProperty* flm = nullptr;
+    CrDeviceProperty* flmOnly = nullptr;
+    CrInt32 nFlmOnly = 0;
+    {
+        CrInt32u codeFlm = CrDevicePropertyCode::CrDeviceProperty_FlashMode;
+        const CrError errFlm = GetSelectDeviceProperties(g_deviceHandle, 1, &codeFlm, &flmOnly, &nFlmOnly);
+        if (!CR_FAILED(errFlm) && flmOnly != nullptr && nFlmOnly >= 1)
+            flm = &flmOnly[0];
+    }
+    const CrDeviceProperty* flc = nullptr;
+    CrDeviceProperty* flcOnly = nullptr;
+    CrInt32 nFlcOnly = 0;
+    {
+        CrInt32u codeFlc = CrDevicePropertyCode::CrDeviceProperty_FlashCompensation;
+        const CrError errFlc = GetSelectDeviceProperties(g_deviceHandle, 1, &codeFlc, &flcOnly, &nFlcOnly);
+        if (!CR_FAILED(errFlc) && flcOnly != nullptr && nFlcOnly >= 1)
+            flc = &flcOnly[0];
+    }
 
     bool video = false;
     if (ep != nullptr)
@@ -518,6 +536,10 @@ static void BuildShootingStateJson(std::string& out)
     AppendProp(out, "st", shtype, sizeof(std::uint8_t), static_cast<CrInt32u>(CrDataType::CrDataType_UInt8Array));
     out += ',';
     AppendProp(out, "drv", drv, sizeof(std::uint32_t), static_cast<CrInt32u>(CrDataType::CrDataType_UInt32Array));
+    out += ',';
+    AppendProp(out, "flm", flm, sizeof(std::uint16_t), static_cast<CrInt32u>(CrDataType::CrDataType_UInt16Array));
+    out += ',';
+    AppendProp(out, "flc", flc, sizeof(std::uint16_t), static_cast<CrInt32u>(CrDataType::CrDataType_UInt16Array));
 
     out.push_back('}');
 
@@ -531,6 +553,10 @@ static void BuildShootingStateJson(std::string& out)
         ReleaseDeviceProperties(g_deviceHandle, shtypeOnly);
     if (drvOnly != nullptr)
         ReleaseDeviceProperties(g_deviceHandle, drvOnly);
+    if (flmOnly != nullptr)
+        ReleaseDeviceProperties(g_deviceHandle, flmOnly);
+    if (flcOnly != nullptr)
+        ReleaseDeviceProperties(g_deviceHandle, flcOnly);
     ReleaseDeviceProperties(g_deviceHandle, propList);
 }
 } // namespace

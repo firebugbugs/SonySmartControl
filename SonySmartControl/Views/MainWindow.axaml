@@ -623,6 +623,39 @@
                                                                    IsVisible="{Binding HasExposureCompensationHint}"/>
                                                     </StackPanel>
                                                 </Expander>
+
+                                                <Expander IsExpanded="{Binding FlashSectionExpanded, Mode=TwoWay}"
+                                                          HorizontalAlignment="Stretch"
+                                                          HorizontalContentAlignment="Stretch">
+                                                    <Expander.Header>
+                                                        <TextBlock FontWeight="SemiBold"
+                                                                   Text="闪光灯设置"
+                                                                   VerticalAlignment="Center"/>
+                                                    </Expander.Header>
+                                                    <StackPanel Spacing="8" Margin="0,4,0,0">
+                                                        <TextBlock Text="闪光模式"
+                                                                   ToolTip.Tip="自动、关闭、强制闪光、慢速/后帘同步等；实际可选项由机身返回。"/>
+                                                        <ComboBox MinHeight="32"
+                                                                  HorizontalAlignment="Stretch"
+                                                                  ItemsSource="{Binding FlashModeChoices}"
+                                                                  SelectedIndex="{Binding SelectedFlashModeIndex, Mode=TwoWay}"
+                                                                  IsEnabled="{Binding FlashModeEnabled}"
+                                                                  PointerWheelChanged="ShutterCombo_OnPointerWheelChanged">
+                                                            <ComboBox.ItemTemplate>
+                                                                <DataTemplate x:DataType="interop:ShootingChoiceItem">
+                                                                    <TextBlock Text="{Binding Display}"/>
+                                                                </DataTemplate>
+                                                            </ComboBox.ItemTemplate>
+                                                        </ComboBox>
+
+                                                        <TextBlock Text="闪光补偿"/>
+                                                        <controls:WheelPickerCombo ItemsSource="{Binding FlashCompensationChoices}"
+                                                                                   SelectedIndex="{Binding SelectedFlashCompensationIndex, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                                                   IsEnabled="{Binding FlashCompensationEnabled}"
+                                                                                   InvertWheel="True"
+                                                                                   WheelAdjustEnabled="True"/>
+                                                    </StackPanel>
+                                                </Expander>
                                             </StackPanel>
                                         </Border>
 
@@ -659,6 +692,80 @@
                                                                                ItemsSource="{Binding GuideOverlayChoices}"
                                                                                SelectedIndex="{Binding GuideOverlayIndex, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
                                                 </Grid>
+                                            </StackPanel>
+                                        </Expander>
+
+                                        <Expander IsExpanded="True"
+                                                  HorizontalAlignment="Stretch"
+                                                  HorizontalContentAlignment="Stretch">
+                                            <Expander.Header>
+                                                <TextBlock FontWeight="SemiBold"
+                                                           Text="延时摄影"
+                                                           VerticalAlignment="Center"/>
+                                            </Expander.Header>
+                                            <StackPanel Spacing="8" Margin="0,4,0,0">
+                                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                                    <TextBlock Grid.Column="0"
+                                                               VerticalAlignment="Center"
+                                                               TextWrapping="Wrap"
+                                                               Text="间隔（秒）"
+                                                               ToolTip.Tip="C# 定时器实现；最低间隔 2 秒，实际周期会因拍照与传输耗时而略长。"/>
+                                                    <TextBox Grid.Column="1"
+                                                             MinWidth="80"
+                                                             Text="{Binding TimelapseIntervalSeconds, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                                </Grid>
+
+                                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                                    <TextBlock Grid.Column="0"
+                                                               VerticalAlignment="Center"
+                                                               TextWrapping="Wrap"
+                                                               Text="总张数（0=无限制）"
+                                                               ToolTip.Tip="如果填写 0，将持续拍摄直到你点“停止”。"/>
+                                                    <TextBox Grid.Column="1"
+                                                             MinWidth="80"
+                                                             Text="{Binding TimelapseTargetFrames, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                                </Grid>
+
+                                                <TextBlock Text="{Binding TimelapseProgressText}"
+                                                           Foreground="#6B7280"/>
+
+                                                <TextBlock Text="保存目录"
+                                                           ToolTip.Tip="延时摄影单独保存到此文件夹（与遥控拍摄目录独立）。"/>
+                                                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                                                    <TextBox Grid.Column="0"
+                                                             Text="{Binding TimelapseSaveDirectory}"
+                                                             Watermark="延时摄影文件夹路径"/>
+                                                    <Button Grid.Column="1"
+                                                            Classes="chrome-text"
+                                                            Content="浏览…"
+                                                            Command="{Binding BrowseTimelapseSaveFolderCommand}"
+                                                            Padding="12,6"/>
+                                                    <Button Grid.Column="2"
+                                                            Classes="chrome-text"
+                                                            Content="打开"
+                                                            Command="{Binding OpenTimelapseSaveFolderCommand}"
+                                                            Padding="12,6"
+                                                            ToolTip.Tip="在文件资源管理器中打开此文件夹"/>
+                                                </Grid>
+
+                                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                                    <Button Classes="chrome-text"
+                                                            Content="开始"
+                                                            Command="{Binding StartTimelapseCommand}"
+                                                            Padding="14,6"/>
+                                                    <Button Classes="chrome-text"
+                                                            Content="暂停"
+                                                            Command="{Binding PauseTimelapseCommand}"
+                                                            Padding="14,6"/>
+                                                    <Button Classes="chrome-text"
+                                                            Content="继续"
+                                                            Command="{Binding ContinueTimelapseCommand}"
+                                                            Padding="14,6"/>
+                                                    <Button Classes="chrome-text"
+                                                            Content="停止"
+                                                            Command="{Binding StopTimelapseCommand}"
+                                                            Padding="14,6"/>
+                                                </StackPanel>
                                             </StackPanel>
                                         </Expander>
                                     </StackPanel>

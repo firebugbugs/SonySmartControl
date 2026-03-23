@@ -107,6 +107,18 @@ public partial class MainWindow : Window
                 return null;
             return folders[0].TryGetLocalPath();
         };
+
+        vm.PickTimelapseSaveFolderAsync = async () =>
+        {
+            var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+            {
+                Title = "选择延时摄影保存目录",
+                AllowMultiple = false,
+            }).ConfigureAwait(false);
+            if (folders.Count == 0)
+                return null;
+            return folders[0].TryGetLocalPath();
+        };
     }
 
     private void MainWindow_OnKeyDown(object? sender, KeyEventArgs e)

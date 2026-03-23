@@ -134,6 +134,25 @@ public static class CrSdkExposureFormatting
             _ => "0x" + ep.ToString("X8", CultureInfo.InvariantCulture),
         };
 
+    /// <summary>CrFlashMode（UInt16）。</summary>
+    public static string FormatFlashMode(ulong raw)
+    {
+        var m = (ushort)(raw & 0xFFFF);
+        return m switch
+        {
+            0x0001 => "自动",
+            0x0002 => "关闭",
+            0x0003 => "强制闪光",
+            0x0004 => "外部同步",
+            0x0005 => "慢速同步",
+            0x0006 => "后帘同步",
+            _ => "0x" + m.ToString("X4", CultureInfo.InvariantCulture),
+        };
+    }
+
+    /// <summary>CrFlashCompensation（EV×1000，UInt16 补码）。</summary>
+    public static string FormatFlashCompensation(ulong raw) => FormatExposureBias(raw);
+
     /// <summary>
     /// 侧栏曝光模式下拉：仅保留「照片」常用项，去掉摄像/视频相关与未知 <c>0x……</c> 占位。
     /// </summary>

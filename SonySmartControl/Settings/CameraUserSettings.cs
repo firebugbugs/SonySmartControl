@@ -18,4 +18,14 @@ public sealed class CameraUserSettings
 
     /// <summary>构图辅助线：0=无，1=三分法，2=十字对准线，3=对角线，4=安全区。</summary>
     public int GuideOverlayIndex { get; set; }
+
+    /// <summary>延时摄影保存目录（绝对路径）。</summary>
+    public string TimelapseSaveDirectory { get; set; } =
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "SonySmartControl", "Timelapse");
+
+    /// <summary>延时摄影间隔（秒），C# 定时器实现；最低为 2 秒。</summary>
+    public int TimelapseIntervalSeconds { get; set; } = 5;
+
+    /// <summary>延时摄影总张数（0=无限制）；C# 定时器实现。</summary>
+    public int TimelapseTargetFrames { get; set; }
 }
