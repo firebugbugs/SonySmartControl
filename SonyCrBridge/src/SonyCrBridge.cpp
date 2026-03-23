@@ -16,8 +16,10 @@
 #include <future>
 #include <memory>
 #include <mutex>
+#include <limits>
 #include <stdexcept>
 #include <string>
+#include <filesystem>
 #include <thread>
 #include <vector>
 
@@ -46,6 +48,8 @@ std::mutex g_mutex;
 /** GetRemoteTransferContentsDataFile 异步完成信号（与 SimpleCli RemoteTransferMode 一致，依赖 OnNotifyRemoteTransferResult）。 */
 std::mutex g_remoteTransferWaitMutex;
 std::promise<void>* g_remoteTransferPromise = nullptr;
+static void AddDownloadBytes(unsigned long long v);
+static unsigned long long TryGetLocalFileSizeBytes(const CrChar* filename);
 
 class BridgeDeviceCallback final : public IDeviceCallback
 {
@@ -64,12 +68,17 @@ public:
 
     void OnLvPropertyChangedCodes(CrInt32u /*num*/, CrInt32u* /*codes*/) override {}
 
-    void OnCompleteDownload(CrChar* /*filename*/, CrInt32u /*type*/) override {}
+    void OnCompleteDownload(CrChar* filename, CrInt32u /*type*/) override
+    {
+        AddDownloadBytes(TryGetLocalFileSizeBytes(filename));
+    }
 
     void OnNotifyContentsTransfer(CrInt32u /*notify*/, CrContentHandle /*handle*/, CrChar* /*filename*/) override {}
 
-    void OnNotifyRemoteTransferResult(CrInt32u notify, CrInt32u /*per*/, CrChar* /*filename*/) override
+    void OnNotifyRemoteTransferResult(CrInt32u notify, CrInt32u /*per*/, CrChar* filename) override
     {
+        if (notify == CrNotify_RemoteTransfer_Result_OK)
+            AddDownloadBytes(TryGetLocalFileSizeBytes(filename));
         std::lock_guard<std::mutex> lk(g_remoteTransferWaitMutex);
         if (!g_remoteTransferPromise)
             return;
@@ -111,6 +120,42 @@ CrInt32u g_cachedBufSize = 0;
 
 std::mutex g_focusFramesJsonMutex;
 std::string g_lastFocusFramesJson = "[]";
+std::atomic_ullong g_transportUploadBytes{0};
+std::atomic_ullong g_transportDownloadBytes{0};
+
+static void ResetTransportStats()
+{
+    g_transportUploadBytes.store(0);
+    g_transportDownloadBytes.store(0);
+}
+
+static void AddUploadBytes(unsigned long long v)
+{
+    if (v > 0)
+        g_transportUploadBytes.fetch_add(v);
+}
+
+static void AddDownloadBytes(unsigned long long v)
+{
+    if (v > 0)
+        g_transportDownloadBytes.fetch_add(v);
+}
+
+static unsigned long long TryGetLocalFileSizeBytes(const CrChar* filename)
+{
+    if (!filename || filename[0] == 0)
+        return 0;
+    std::error_code ec;
+#if defined(_WIN32)
+    const std::filesystem::path p(reinterpret_cast<const wchar_t*>(filename));
+#else
+    const std::filesystem::path p(reinterpret_cast<const char*>(filename));
+#endif
+    const auto sz = std::filesystem::file_size(p, ec);
+    if (ec)
+        return 0;
+    return static_cast<unsigned long long>(sz);
+}
 
 static void UpdateFocusFramesJsonFromLiveViewProps(CrLiveViewProperty* props, CrInt32 num)
 {
@@ -242,6 +287,7 @@ static void DisconnectDeviceUnlocked()
         g_deviceHandle = 0;
     }
     g_callback.connected.store(false);
+    ResetTransportStats();
     ClearLiveViewBuffers();
     {
         std::lock_guard<std::mutex> fj(g_focusFramesJsonMutex);
@@ -713,6 +759,7 @@ SONY_CR_API SonyCrStatus SonyCr_ConnectRemoteByIndex(int index)
     DisconnectDeviceUnlocked();
 
     auto* info = const_cast<ICrCameraObjectInfo*>(infoConst);
+    // 主链路稳定性优先：默认 Remote 模式，确保拍照后回传/保存行为与既有版本一致。
     CrError err = Connect(info, &g_callback, &g_deviceHandle, CrSdkControlMode_Remote);
     if (CR_FAILED(err))
         return ToConnectStatus(err);
@@ -731,6 +778,7 @@ SONY_CR_API SonyCrStatus SonyCr_ConnectRemoteByIndex(int index)
 
     // 遥控触摸默认可能是「跟踪」等，点击坐标对焦需尽量设为 Spot AF（仍可能被菜单/对焦模式限制）
     TrySetRemoteTouchSpotAf(g_deviceHandle);
+    ResetTransportStats();
 
     return SONY_CR_OK;
 #endif
@@ -821,6 +869,7 @@ SONY_CR_API SonyCrStatus SonyCr_LiveView_GetLastJpeg(unsigned char* buffer, int 
 
     std::memcpy(buffer, imgData, static_cast<size_t>(imageSize));
     *outWritten = static_cast<int>(imageSize);
+    AddDownloadBytes(static_cast<unsigned long long>(imageSize));
     return SONY_CR_OK;
 #endif
 }
@@ -841,6 +890,7 @@ SONY_CR_API SonyCrStatus SonyCr_RemoteTouchAf(int x, int y)
         | static_cast<CrInt64u>(static_cast<CrInt32u>(y) & 0xFFFFu);
     const CrError err =
         SCRSDK::ExecuteControlCodeValue(g_deviceHandle, SCRSDK::CrControlCode_RemoteTouchOperation, value);
+    AddUploadBytes(12);
     return CR_FAILED(err) ? SONY_CR_ERR_CONTROL_FAILED : SONY_CR_OK;
 #endif
 }
@@ -857,6 +907,7 @@ SONY_CR_API SonyCrStatus SonyCr_ExecuteControlCodeValue(unsigned int code, unsig
         return SONY_CR_ERR_NOT_CONNECTED;
     const CrError err = SCRSDK::ExecuteControlCodeValue(
         g_deviceHandle, static_cast<SCRSDK::CrControlCode>(code), static_cast<CrInt64u>(value));
+    AddUploadBytes(12);
     return CR_FAILED(err) ? SONY_CR_ERR_CONTROL_FAILED : SONY_CR_OK;
 #endif
 }
@@ -881,6 +932,7 @@ SONY_CR_API SonyCrStatus SonyCr_ExecuteControlCodeString(unsigned int code, cons
         static_cast<SCRSDK::CrControlCode>(code),
         static_cast<CrInt16u>(length),
         reinterpret_cast<const CrInt16u*>(utf16));
+    AddUploadBytes(static_cast<unsigned long long>(length) * 2ULL + 8ULL);
     return CR_FAILED(err) ? SONY_CR_ERR_CONTROL_FAILED : SONY_CR_OK;
 #endif
 }
@@ -1183,7 +1235,381 @@ SONY_CR_API SonyCrStatus SonyCr_SetDeviceSetting(unsigned int key, unsigned int 
     if (g_deviceHandle == 0 || !g_callback.connected.load())
         return SONY_CR_ERR_NOT_CONNECTED;
     const CrError err = SCRSDK::SetDeviceSetting(g_deviceHandle, static_cast<CrInt32u>(key), static_cast<CrInt32u>(value));
+    AddUploadBytes(8);
     return CR_FAILED(err) ? SONY_CR_ERR_CONTROL_FAILED : SONY_CR_OK;
+#endif
+}
+
+SONY_CR_API SonyCrStatus SonyCr_GetTransportStats(unsigned long long* outUploadBytes, unsigned long long* outDownloadBytes)
+{
+#if SONY_CR_BRIDGE_STUB
+    (void)outUploadBytes;
+    (void)outDownloadBytes;
+    return SONY_CR_ERR_SDK_NOT_LINKED;
+#else
+    if (!outUploadBytes || !outDownloadBytes)
+        return SONY_CR_ERR_INVALID_PARAM;
+    *outUploadBytes = g_transportUploadBytes.load();
+    *outDownloadBytes = g_transportDownloadBytes.load();
+    return SONY_CR_OK;
+#endif
+}
+
+SONY_CR_API void SonyCr_ResetTransportStats(void)
+{
+#if SONY_CR_BRIDGE_STUB
+    return;
+#else
+    ResetTransportStats();
+#endif
+}
+
+SONY_CR_API SonyCrStatus SonyCr_GetSdCardUsageEstimate(
+    unsigned long long* outSlot1TotalBytes,
+    unsigned long long* outSlot1UsedBytes,
+    int* outSlot1HasCard,
+    unsigned long long* outSlot2TotalBytes,
+    unsigned long long* outSlot2UsedBytes,
+    int* outSlot2HasCard)
+{
+#if SONY_CR_BRIDGE_STUB
+    if (outSlot1TotalBytes) *outSlot1TotalBytes = 0;
+    if (outSlot1UsedBytes) *outSlot1UsedBytes = 0;
+    if (outSlot1HasCard) *outSlot1HasCard = 0;
+    if (outSlot2TotalBytes) *outSlot2TotalBytes = 0;
+    if (outSlot2UsedBytes) *outSlot2UsedBytes = 0;
+    if (outSlot2HasCard) *outSlot2HasCard = 0;
+    return SONY_CR_ERR_SDK_NOT_LINKED;
+#else
+    using namespace SCRSDK;
+
+    if (!outSlot1TotalBytes || !outSlot1UsedBytes || !outSlot1HasCard || !outSlot2TotalBytes || !outSlot2UsedBytes || !outSlot2HasCard)
+        return SONY_CR_ERR_INVALID_PARAM;
+
+    *outSlot1TotalBytes = 0;
+    *outSlot1UsedBytes = 0;
+    *outSlot1HasCard = 0;
+    *outSlot2TotalBytes = 0;
+    *outSlot2UsedBytes = 0;
+    *outSlot2HasCard = 0;
+
+    auto safeMulU64 = [](unsigned long long a, unsigned long long b) -> unsigned long long
+    {
+        if (a == 0 || b == 0)
+            return 0;
+        const auto max = std::numeric_limits<unsigned long long>::max();
+        if (a > max / b)
+            return max;
+        return a * b;
+    };
+
+    // remainingX: 剩余可拍摄“张数”
+    // statusX: 用于判断无卡
+    CrInt32u remaining1 = 0;
+    CrInt32u remaining2 = 0;
+    CrInt32u maxRemaining1 = 0;
+    CrInt32u maxRemaining2 = 0;
+    CrSlotStatus status1 = CrSlotStatus_NoCard;
+    CrSlotStatus status2 = CrSlotStatus_NoCard;
+
+    {
+        CrInt32u codes[] = {
+            static_cast<CrInt32u>(CrDevicePropertyCode::CrDeviceProperty_MediaSLOT1_RemainingNumber),
+            static_cast<CrInt32u>(CrDevicePropertyCode::CrDeviceProperty_MediaSLOT2_RemainingNumber),
+            static_cast<CrInt32u>(CrDevicePropertyCode::CrDeviceProperty_MediaSLOT1_Status),
+            static_cast<CrInt32u>(CrDevicePropertyCode::CrDeviceProperty_MediaSLOT2_Status),
+        };
+
+        CrDeviceProperty* propList = nullptr;
+        CrInt32 nprop = 0;
+        CrError err = SCRSDK::CrError_None;
+        {
+            std::lock_guard lock(g_mutex);
+            if (g_deviceHandle == 0 || !g_callback.connected.load())
+                return SONY_CR_ERR_NOT_CONNECTED;
+
+            err = GetSelectDeviceProperties(g_deviceHandle, 4, codes, &propList, &nprop);
+        }
+
+        if (!CR_FAILED(err) && propList != nullptr && nprop >= 1)
+        {
+            for (CrInt32 i = 0; i < nprop; ++i)
+            {
+                const CrInt32u c = propList[i].GetCode();
+                if (c == static_cast<CrInt32u>(CrDevicePropertyCode::CrDeviceProperty_MediaSLOT1_RemainingNumber))
+                {
+                    remaining1 = static_cast<CrInt32u>(propList[i].GetCurrentValue());
+                    auto tryExtractMax = [](const CrInt8u* p, CrInt32u sz, CrInt32u current, CrInt32u& outMax)
+                    {
+                        if (p == nullptr || sz < 8u)
+                            return;
+                        // UInt32Range 一般是 [min,max,step]，但不同固件在 values/getSetValues 上可能布局差异；
+                        // 这里尝试多个偏移，取“>= current 且尽量大”的候选。
+                        for (CrInt32u off = 0; off + 4u <= sz && off <= 8u; off += 4u)
+                        {
+                            CrInt32u v = 0;
+                            std::memcpy(&v, p + off, sizeof(CrInt32u));
+                            if (v >= current && v > outMax)
+                                outMax = v;
+                        }
+                    };
+                    tryExtractMax(propList[i].GetValues(), propList[i].GetValueSize(), remaining1, maxRemaining1);
+                    tryExtractMax(propList[i].GetSetValues(), propList[i].GetSetValueSize(), remaining1, maxRemaining1);
+                }
+                else if (c == static_cast<CrInt32u>(CrDevicePropertyCode::CrDeviceProperty_MediaSLOT2_RemainingNumber))
+                {
+                    remaining2 = static_cast<CrInt32u>(propList[i].GetCurrentValue());
+                    auto tryExtractMax = [](const CrInt8u* p, CrInt32u sz, CrInt32u current, CrInt32u& outMax)
+                    {
+                        if (p == nullptr || sz < 8u)
+                            return;
+                        for (CrInt32u off = 0; off + 4u <= sz && off <= 8u; off += 4u)
+                        {
+                            CrInt32u v = 0;
+                            std::memcpy(&v, p + off, sizeof(CrInt32u));
+                            if (v >= current && v > outMax)
+                                outMax = v;
+                        }
+                    };
+                    tryExtractMax(propList[i].GetValues(), propList[i].GetValueSize(), remaining2, maxRemaining2);
+                    tryExtractMax(propList[i].GetSetValues(), propList[i].GetSetValueSize(), remaining2, maxRemaining2);
+                }
+                else if (c == static_cast<CrInt32u>(CrDevicePropertyCode::CrDeviceProperty_MediaSLOT1_Status))
+                    status1 = static_cast<CrSlotStatus>(propList[i].GetCurrentValue());
+                else if (c == static_cast<CrInt32u>(CrDevicePropertyCode::CrDeviceProperty_MediaSLOT2_Status))
+                    status2 = static_cast<CrSlotStatus>(propList[i].GetCurrentValue());
+            }
+        }
+
+        if (propList != nullptr)
+        {
+            std::lock_guard lock(g_mutex);
+            if (g_deviceHandle != 0)
+                ReleaseDeviceProperties(g_deviceHandle, propList);
+        }
+    }
+
+    // 统计 used：通过 RemoteTransfer 列表累计 contentId 数（shot）与文件真实字节数。
+    struct SlotUsageStats
+    {
+        unsigned long long usedShots = 0;
+        unsigned long long usedBytes = 0;
+    };
+
+    auto countSlotUsage = [&](CrSlotNumber slot, SlotUsageStats& stats) -> bool
+    {
+        stats = {};
+
+        CrCaptureDate* dateList = nullptr;
+        CrInt32u dateNums = 0;
+        CrError err = SCRSDK::CrError_None;
+        {
+            std::lock_guard lock(g_mutex);
+            if (g_deviceHandle == 0 || !g_callback.connected.load())
+                return false;
+            err = GetRemoteTransferCapturedDateList(g_deviceHandle, slot, &dateList, &dateNums);
+        }
+
+        if (CR_FAILED(err) || dateList == nullptr || dateNums == 0)
+        {
+            if (dateList != nullptr)
+            {
+                std::lock_guard lock(g_mutex);
+                if (g_deviceHandle != 0)
+                    ReleaseRemoteTransferCapturedDateList(g_deviceHandle, dateList);
+            }
+            return true;
+        }
+
+        for (int di = static_cast<int>(dateNums) - 1; di >= 0; --di)
+        {
+            CrContentsInfo* infoList = nullptr;
+            CrInt32u infoNums = 0;
+
+            {
+                std::lock_guard lock(g_mutex);
+                if (g_deviceHandle == 0 || !g_callback.connected.load())
+                {
+                    if (g_deviceHandle != 0 && dateList != nullptr)
+                        ReleaseRemoteTransferCapturedDateList(g_deviceHandle, dateList);
+                    return false;
+                }
+                err = GetRemoteTransferContentsInfoList(
+                    g_deviceHandle,
+                    slot,
+                    CrGetContentsInfoListType_Range_Day,
+                    &dateList[static_cast<CrInt32u>(di)],
+                    0,
+                    &infoList,
+                    &infoNums);
+            }
+
+            if (!CR_FAILED(err) && infoList != nullptr && infoNums > 0)
+            {
+                stats.usedShots += static_cast<unsigned long long>(infoNums);
+                for (CrInt32u ii = 0; ii < infoNums; ++ii)
+                {
+                    const CrContentsInfo& ci = infoList[ii];
+                    if (ci.files == nullptr || ci.filesNum == 0)
+                        continue;
+                    for (CrInt32u fi = 0; fi < ci.filesNum; ++fi)
+                    {
+                        stats.usedBytes += static_cast<unsigned long long>(ci.files[fi].fileSize);
+                    }
+                }
+            }
+
+            {
+                std::lock_guard lock(g_mutex);
+                if (g_deviceHandle != 0 && infoList != nullptr)
+                    ReleaseRemoteTransferContentsInfoList(g_deviceHandle, infoList);
+            }
+        }
+
+        {
+            std::lock_guard lock(g_mutex);
+            if (g_deviceHandle != 0 && dateList != nullptr)
+                ReleaseRemoteTransferCapturedDateList(g_deviceHandle, dateList);
+        }
+
+        return true;
+    };
+
+    SlotUsageStats slot1Stats;
+    SlotUsageStats slot2Stats;
+    if (!countSlotUsage(CrSlotNumber_Slot1, slot1Stats))
+        return SONY_CR_ERR_NOT_CONNECTED;
+    if (!countSlotUsage(CrSlotNumber_Slot2, slot2Stats))
+        return SONY_CR_ERR_NOT_CONNECTED;
+
+    // RemoteTransfer 列表在部分机型/设置下可能不是“全卡内容”。
+    // 追加 MTP 全量内容统计作为兜底（只统计总已用字节，不分槽）。
+    unsigned long long mtpTotalUsedBytes = 0;
+    unsigned long long mtpTotalContentCount = 0;
+    {
+        std::lock_guard lock(g_mutex);
+        if (g_deviceHandle != 0 && g_callback.connected.load())
+        {
+            SCRSDK::CrMtpFolderInfo* folders = nullptr;
+            CrInt32u folderNums = 0;
+            CrError err = SCRSDK::GetDateFolderList(g_deviceHandle, &folders, &folderNums);
+            if (!CR_FAILED(err) && folders != nullptr && folderNums > 0)
+            {
+                for (CrInt32u fi = 0; fi < folderNums; ++fi)
+                {
+                    SCRSDK::CrContentHandle* handles = nullptr;
+                    CrInt32u handleNums = 0;
+                    err = SCRSDK::GetContentsHandleList(g_deviceHandle, folders[fi].handle, &handles, &handleNums);
+                    if (CR_FAILED(err) || handles == nullptr || handleNums == 0)
+                    {
+                        if (handles != nullptr)
+                            SCRSDK::ReleaseContentsHandleList(g_deviceHandle, handles);
+                        continue;
+                    }
+                    mtpTotalContentCount += static_cast<unsigned long long>(handleNums);
+
+                    for (CrInt32u hi = 0; hi < handleNums; ++hi)
+                    {
+                        SCRSDK::CrMtpContentsInfo info;
+                        std::memset(&info, 0, sizeof(info));
+                        const CrError e2 = SCRSDK::GetContentsDetailInfo(g_deviceHandle, handles[hi], &info);
+                        if (!CR_FAILED(e2))
+                            mtpTotalUsedBytes += static_cast<unsigned long long>(info.contentSize);
+                    }
+
+                    SCRSDK::ReleaseContentsHandleList(g_deviceHandle, handles);
+                }
+
+                SCRSDK::ReleaseDateFolderList(g_deviceHandle, folders);
+            }
+            else if (folders != nullptr)
+            {
+                SCRSDK::ReleaseDateFolderList(g_deviceHandle, folders);
+            }
+        }
+    }
+
+    // 每张（每个 contentId）平均字节数：用于把“remaining shots”换算成剩余字节估算。
+    const unsigned long long avg1 =
+        slot1Stats.usedShots > 0 ? (slot1Stats.usedBytes / slot1Stats.usedShots) : 0;
+    const unsigned long long avg2 =
+        slot2Stats.usedShots > 0 ? (slot2Stats.usedBytes / slot2Stats.usedShots) : 0;
+    const unsigned long long fallbackAvg =
+        avg1 > 0 ? avg1 : (avg2 > 0 ? avg2 : (25ull * 1024ull * 1024ull)); // 双卡都无历史时取 25MB/张兜底
+
+    // 若列表拿不到已用（usedBytes=0），回退到 RemainingNumber 的 [max-current] 来估算已用张数。
+    const unsigned long long used1ShotsFromRange =
+        (maxRemaining1 > 0 && maxRemaining1 >= remaining1) ? static_cast<unsigned long long>(maxRemaining1 - remaining1) : 0ull;
+    const unsigned long long used2ShotsFromRange =
+        (maxRemaining2 > 0 && maxRemaining2 >= remaining2) ? static_cast<unsigned long long>(maxRemaining2 - remaining2) : 0ull;
+
+    const unsigned long long perShot1 = avg1 > 0 ? avg1 : fallbackAvg;
+    const unsigned long long perShot2 = avg2 > 0 ? avg2 : fallbackAvg;
+
+    unsigned long long used1Bytes =
+        slot1Stats.usedBytes > 0 ? slot1Stats.usedBytes : safeMulU64(used1ShotsFromRange, perShot1);
+    unsigned long long used2Bytes =
+        slot2Stats.usedBytes > 0 ? slot2Stats.usedBytes : safeMulU64(used2ShotsFromRange, perShot2);
+
+    // 若分槽统计仍为 0，但 MTP 全量统计有值，则按插卡情况兜底分配。
+    if (mtpTotalUsedBytes == 0 && mtpTotalContentCount > 0)
+        mtpTotalUsedBytes = safeMulU64(mtpTotalContentCount, fallbackAvg);
+
+    if (mtpTotalUsedBytes > 0 && used1Bytes == 0 && used2Bytes == 0)
+    {
+        const bool slot1Present = (status1 != CrSlotStatus_NoCard) || remaining1 > 0;
+        const bool slot2Present = (status2 != CrSlotStatus_NoCard) || remaining2 > 0;
+        if (slot1Present && !slot2Present)
+            used1Bytes = mtpTotalUsedBytes;
+        else if (slot2Present && !slot1Present)
+            used2Bytes = mtpTotalUsedBytes;
+        else if (slot1Present && slot2Present)
+        {
+            const unsigned long long r1 = static_cast<unsigned long long>(remaining1);
+            const unsigned long long r2 = static_cast<unsigned long long>(remaining2);
+            if (r1 + r2 > 0)
+            {
+                // 仅用于兜底，按剩余张数反比分配（剩余越少说明已用越多）。
+                const unsigned long long inv1 = r2;
+                const unsigned long long inv2 = r1;
+                const unsigned long long invSum = inv1 + inv2;
+                if (invSum > 0)
+                {
+                    used1Bytes = (mtpTotalUsedBytes * inv1) / invSum;
+                    used2Bytes = mtpTotalUsedBytes - used1Bytes;
+                }
+            }
+        }
+    }
+
+    unsigned long long total1Bytes = used1Bytes + safeMulU64(static_cast<unsigned long long>(remaining1), perShot1);
+    unsigned long long total2Bytes = used2Bytes + safeMulU64(static_cast<unsigned long long>(remaining2), perShot2);
+
+    if (maxRemaining1 > 0)
+    {
+        const auto totalByMax = safeMulU64(static_cast<unsigned long long>(maxRemaining1), perShot1);
+        if (totalByMax > total1Bytes)
+            total1Bytes = totalByMax;
+    }
+    if (maxRemaining2 > 0)
+    {
+        const auto totalByMax = safeMulU64(static_cast<unsigned long long>(maxRemaining2), perShot2);
+        if (totalByMax > total2Bytes)
+            total2Bytes = totalByMax;
+    }
+
+    const bool has1 = (status1 != CrSlotStatus_NoCard) || (slot1Stats.usedShots > 0 || remaining1 > 0);
+    const bool has2 = (status2 != CrSlotStatus_NoCard) || (slot2Stats.usedShots > 0 || remaining2 > 0);
+
+    *outSlot1HasCard = has1 ? 1 : 0;
+    *outSlot1UsedBytes = has1 ? used1Bytes : 0;
+    *outSlot1TotalBytes = has1 ? total1Bytes : 0;
+
+    *outSlot2HasCard = has2 ? 1 : 0;
+    *outSlot2UsedBytes = has2 ? used2Bytes : 0;
+    *outSlot2TotalBytes = has2 ? total2Bytes : 0;
+
+    return SONY_CR_OK;
 #endif
 }
 

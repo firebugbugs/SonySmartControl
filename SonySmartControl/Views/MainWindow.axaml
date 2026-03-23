@@ -50,6 +50,29 @@
         <Style Selector="Button.filmstrip-tile:pointerover /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Opacity" Value="0.92"/>
         </Style>
+        <Style Selector="Button.popup-lite">
+            <Setter Property="Background" Value="#F5F7FA"/>
+            <Setter Property="BorderBrush" Value="#D6DCE5"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Padding" Value="12,8"/>
+            <Setter Property="Foreground" Value="#1F2430"/>
+        </Style>
+        <Style Selector="Button.popup-lite:pointerover">
+            <Setter Property="Background" Value="#EDF1F6"/>
+        </Style>
+        <Style Selector="Button.popup-danger">
+            <Setter Property="Background" Value="#FFEDEE"/>
+            <Setter Property="BorderBrush" Value="#F1C4C7"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Padding" Value="12,8"/>
+            <Setter Property="Foreground" Value="#A1262D"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+        <Style Selector="Button.popup-danger:pointerover">
+            <Setter Property="Background" Value="#FFE3E5"/>
+        </Style>
     </Window.Styles>
 
     <!-- 边缘 6px 命中区 + 中心卡片；最大化时边缘改为 0，避免透明缝露出桌面 -->
@@ -127,21 +150,34 @@
                                     </StackPanel>
                                 </ToolTip.Tip>
                             </TextBlock>
-                            <Border MinWidth="56"
+                            <Button x:Name="CameraConnectionBadgeButton"
+                                    MinWidth="56"
                                     Height="24"
                                     Padding="10,0"
                                     CornerRadius="12"
                                     Background="{Binding CameraConnectionBadgeBackground}"
-                                    VerticalAlignment="Center">
+                                    VerticalAlignment="Center"
+                                    IsEnabled="{Binding IsSessionActive}"
+                                    Focusable="False"
+                                    Classes="chrome-text"
+                                    Click="CameraConnectionBadgeButton_OnClick"
+                                    ToolTip.Tip="{Binding CameraConnectionTooltip}">
                                 <TextBlock Text="{Binding CameraConnectionBadgeText}"
                                            Foreground="{Binding CameraConnectionBadgeForeground}"
                                            FontSize="12"
                                            FontWeight="SemiBold"
-                                           ToolTip.Tip="{Binding CameraConnectionTooltip}"
                                            HorizontalAlignment="Center"
                                            VerticalAlignment="Center"/>
-                            </Border>
+                            </Button>
                         </StackPanel>
+                        <TextBlock Grid.Column="2"
+                                   VerticalAlignment="Center"
+                                   HorizontalAlignment="Left"
+                                   Margin="12,0,0,0"
+                                   Foreground="#5B6575"
+                                   FontSize="12"
+                                   Text="{Binding TransportSpeedText}"
+                                   ToolTip.Tip="相机会话吞吐估算（上传/下载字节每秒），USB 与网口均按与相机相关调用统计。"/>
                         <StackPanel Grid.Column="3"
                                     Orientation="Horizontal"
                                     VerticalAlignment="Center"
@@ -184,6 +220,153 @@
                         </StackPanel>
                     </Grid>
                 </Border>
+
+            <!-- 已连接后点击徽标弹出的浮窗：格式化 SD 卡等 -->
+            <Popup x:Name="ConnectedActionsPopup"
+                   Placement="Bottom"
+                   PlacementTarget="{Binding #CameraConnectionBadgeButton}"
+                   IsOpen="False"
+                   IsLightDismissEnabled="True">
+                <Border Padding="12"
+                        CornerRadius="12"
+                        Background="#FFFFFF"
+                        BorderBrush="#D9DEE8"
+                        BorderThickness="1"
+                        BoxShadow="0 10 30 0 #22000000">
+                    <StackPanel Spacing="10" MinWidth="280">
+                        <TextBlock Text="相机操作"
+                                   FontSize="13"
+                                   FontWeight="SemiBold"
+                                   Foreground="#1F2430"/>
+                        <Border Padding="10"
+                                CornerRadius="8"
+                                BorderBrush="#E5EAF0"
+                                BorderThickness="1"
+                                Background="#FAFBFD">
+                            <StackPanel Spacing="10">
+                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                    <TextBlock Grid.Column="0"
+                                               VerticalAlignment="Center"
+                                               TextWrapping="Wrap"
+                                               Text="屏幕开关"
+                                               ToolTip.Tip="关闭后机身背屏熄灭；开启后恢复显示。"/>
+                                    <ToggleSwitch Grid.Column="1"
+                                                  VerticalAlignment="Center"
+                                                  OnContent="开"
+                                                  OffContent="关"
+                                                  IsChecked="{Binding CameraScreenPowerOn, Mode=TwoWay}"
+                                                  IsEnabled="{Binding CameraScreenPowerEnabled}"/>
+                                </Grid>
+                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                    <TextBlock Grid.Column="0"
+                                               VerticalAlignment="Center"
+                                               TextWrapping="Wrap"
+                                               Text="LiveView 取流"
+                                               ToolTip.Tip="关闭后停止 CMOS 实时取流；拍照控制仍可用。"/>
+                                    <ToggleSwitch Grid.Column="1"
+                                                  VerticalAlignment="Center"
+                                                  OnContent="开"
+                                                  OffContent="关"
+                                                  IsChecked="{Binding LiveViewEnabled, Mode=TwoWay}"
+                                                  IsEnabled="{Binding LiveViewEnabledControlEnabled}"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- SD 卡容量/使用量进度条：用于格式化 SD 卡前的状态预览 -->
+                        <Border Padding="10"
+                                CornerRadius="8"
+                                BorderBrush="#E5EAF0"
+                                BorderThickness="1"
+                                Background="#FFFFFF">
+                            <StackPanel Spacing="10">
+                                <TextBlock Text="SD 卡容量与使用量"
+                                           FontSize="12"
+                                           FontWeight="SemiBold"
+                                           Foreground="#1F2430"/>
+
+                                <StackPanel Spacing="8">
+                                    <Border IsVisible="{Binding SdCardSlot1HasCard}"
+                                            Padding="10"
+                                            CornerRadius="8"
+                                            BorderBrush="#E5EAF0"
+                                            BorderThickness="1"
+                                            Background="#FAFBFD">
+                                        <StackPanel Spacing="6">
+                                            <TextBlock Text="SLOT1"
+                                                       FontSize="12"
+                                                       FontWeight="SemiBold"
+                                                       Foreground="#1F2430"/>
+                                            <TextBlock Text="{Binding SdCardSlot1SummaryText}"
+                                                       FontSize="12"
+                                                       Foreground="#6B7280"/>
+                                            <ProgressBar Value="{Binding SdCardSlot1UsagePercent}"
+                                                         Maximum="100"
+                                                         Height="8"
+                                                         Background="#E8EBF2"
+                                                         Foreground="{Binding SdCardSlot1ProgressBrush}"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <Border IsVisible="{Binding SdCardSlot2HasCard}"
+                                            Padding="10"
+                                            CornerRadius="8"
+                                            BorderBrush="#E5EAF0"
+                                            BorderThickness="1"
+                                            Background="#FAFBFD">
+                                        <StackPanel Spacing="6">
+                                            <TextBlock Text="SLOT2"
+                                                       FontSize="12"
+                                                       FontWeight="SemiBold"
+                                                       Foreground="#1F2430"/>
+                                            <TextBlock Text="{Binding SdCardSlot2SummaryText}"
+                                                       FontSize="12"
+                                                       Foreground="#6B7280"/>
+                                            <ProgressBar Value="{Binding SdCardSlot2UsagePercent}"
+                                                         Maximum="100"
+                                                         Height="8"
+                                                         Background="#E8EBF2"
+                                                         Foreground="{Binding SdCardSlot2ProgressBrush}"/>
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <Button Classes="popup-lite"
+                                Content="格式化 SD 卡"
+                                IsEnabled="{Binding IsSessionActive}"
+                                Command="{Binding RequestFormatSdCardConfirmCommand}"
+                                HorizontalAlignment="Stretch"
+                                Padding="12,8"
+                                ToolTip.Tip="清空并初始化存储卡（可能需要数十秒，请勿在执行过程中断开）。"/>
+                        <Border IsVisible="{Binding ShowFormatSdCardConfirm}"
+                                Margin="0,4,0,0"
+                                Padding="10"
+                                CornerRadius="8"
+                                BorderThickness="1"
+                                BorderBrush="#F1D7A8"
+                                Background="#FFF9ED">
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="风险提醒"
+                                           FontWeight="SemiBold"
+                                           Foreground="#9A6A00"/>
+                                <TextBlock Text="格式化会清空 SD 卡内所有照片/视频，且通常不可恢复。请确认已完成备份，并确保相机电量充足。"
+                                           TextWrapping="Wrap"
+                                           Foreground="#5B4A21"/>
+                                <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                                    <Button Classes="popup-lite"
+                                            Content="取消"
+                                            Command="{Binding CancelFormatSdCardConfirmCommand}"/>
+                                    <Button Classes="popup-danger"
+                                            Content="确认格式化"
+                                            Command="{Binding ConfirmFormatSdCardCommand}"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </Border>
+            </Popup>
 
                 <!-- 工具行：左侧连接/状态不占用右侧栏宽度；右上与侧栏列对齐：拍照/摄影切换 -->
                 <Border Grid.Row="1" Padding="16,12,16,0" Background="Transparent">
@@ -377,7 +560,6 @@
                                                                       SizeChanged="FilmstripPhotos_OnSizeChanged"
                                                                       ItemsSource="{Binding RecentPhotos}"
                                                                       SelectCommand="{Binding ShowRecentPhotoCommand}"
-                                                                      CopyCommand="{Binding CopyPreviewImageToClipboardCommand}"
                                                                       DeleteCommand="{Binding DeletePreviewImageCommand}"/>
                                     </Grid>
                                 </Border>
@@ -478,44 +660,6 @@
                                                 Opacity="{Binding ShootingPanelOpacity}"
                                                 Padding="0,4,0,0">
                                             <StackPanel Spacing="10">
-                                                <Expander IsExpanded="{Binding GeneralSectionExpanded, Mode=TwoWay}"
-                                                          HorizontalAlignment="Stretch"
-                                                          HorizontalContentAlignment="Stretch">
-                                                    <Expander.Header>
-                                                        <TextBlock FontWeight="SemiBold"
-                                                                   Text="通用设置"
-                                                                   VerticalAlignment="Center"/>
-                                                    </Expander.Header>
-                                                    <StackPanel Spacing="8" Margin="0,4,0,0">
-                                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                                                            <TextBlock Grid.Column="0"
-                                                                       VerticalAlignment="Center"
-                                                                       TextWrapping="Wrap"
-                                                                       Text="屏幕开关"
-                                                                       ToolTip.Tip="关闭后机身背屏熄灭；开启后恢复显示。"/>
-                                                            <ToggleSwitch Grid.Column="1"
-                                                                          VerticalAlignment="Center"
-                                                                          OnContent="开"
-                                                                          OffContent="关"
-                                                                          IsChecked="{Binding CameraScreenPowerOn, Mode=TwoWay}"
-                                                                          IsEnabled="{Binding CameraScreenPowerEnabled}"/>
-                                                        </Grid>
-                                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                                                            <TextBlock Grid.Column="0"
-                                                                       VerticalAlignment="Center"
-                                                                       TextWrapping="Wrap"
-                                                                       Text="LiveView 取流"
-                                                                       ToolTip.Tip="关闭后停止 CMOS 实时取流，进入低功耗静默待机；拍照控制仍可用。"/>
-                                                            <ToggleSwitch Grid.Column="1"
-                                                                          VerticalAlignment="Center"
-                                                                          OnContent="开"
-                                                                          OffContent="关"
-                                                                          IsChecked="{Binding LiveViewEnabled, Mode=TwoWay}"
-                                                                          IsEnabled="{Binding LiveViewEnabledControlEnabled}"/>
-                                                        </Grid>
-                                                    </StackPanel>
-                                                </Expander>
-
                                                 <Expander IsExpanded="{Binding ExposureSectionExpanded, Mode=TwoWay}"
                                                           HorizontalAlignment="Stretch"
                                                           HorizontalContentAlignment="Stretch">
@@ -609,7 +753,7 @@
                                                                                    WheelAdjustEnabled="True"/>
 
                                                         <TextBlock Text="曝光补偿"
-                                                                   ToolTip.Tip="与机身曝光补偿（±EV）一致；数值为 SDK 的「EV×1000」。下拉选择；或在本框悬停约 0.25s 后用滚轮微调（与光圈/快门/ISO 相同）。"/>
+                                                                   ToolTip.Tip="与机身曝光补偿（±EV）一致；数值为 SDK 的「EV×1000」。下拉选择；或在本框悬停约 0.75s 后用滚轮微调（与光圈/快门/ISO 相同）。"/>
                                                         <controls:WheelPickerCombo ItemsSource="{Binding ExposureBiasChoices}"
                                                                                    SelectedIndex="{Binding SelectedExposureBiasIndex, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                                                                    IsEnabled="{Binding ExposureBiasEnabled}"
@@ -695,7 +839,7 @@
                                             </StackPanel>
                                         </Expander>
 
-                                        <Expander IsExpanded="True"
+                                        <Expander IsExpanded="{Binding TimelapseSectionExpanded, Mode=TwoWay}"
                                                   HorizontalAlignment="Stretch"
                                                   HorizontalContentAlignment="Stretch">
                                             <Expander.Header>

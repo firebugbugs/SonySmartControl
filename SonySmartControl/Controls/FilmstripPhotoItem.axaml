@@ -40,7 +40,6 @@
             PointerReleased="HitArea_OnPointerReleased">
         <Border.ContextFlyout>
             <MenuFlyout ShowMode="Standard">
-                <MenuItem Header="复制" Click="CopyMenuItem_OnClick"/>
                 <MenuItem Header="删除" Click="DeleteMenuItem_OnClick"/>
             </MenuFlyout>
         </Border.ContextFlyout>
@@ -70,7 +69,7 @@
                     BorderThickness="3"
                     Background="Transparent"
                     IsHitTestVisible="False"
-                    IsVisible="{Binding IsFilmstripSelected}"/>
+                    IsVisible="{Binding IsFilmstripHighlightVisible}"/>
             <Button x:Name="InfoButton"
                     Classes="filmstrip-info-btn"
                     ToolTip.ShowDelay="0"

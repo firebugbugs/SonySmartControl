@@ -10,7 +10,11 @@ namespace SonySmartControl.ViewModels;
 public partial class MainWindowViewModel
 {
     private DispatcherTimer? _shootingPollTimer;
+    private DispatcherTimer? _transportSpeedTimer;
     private bool _shootingSyncFromCamera;
+    private ulong _transportPrevUploadBytes;
+    private ulong _transportPrevDownloadBytes;
+    private DateTime? _transportPrevAtUtc;
 
     [ObservableProperty] private bool _isVideoShootingMode;
 
@@ -175,9 +179,81 @@ public partial class MainWindowViewModel
             EnsureShootingTimer();
             _shootingPollTimer!.Start();
             ApplyShootingJsonFromSession();
+            EnsureTransportSpeedTimer();
+            _transportSpeedTimer!.Start();
+            RefreshTransportSpeedFromSession();
         }
         else
+        {
             StopShootingPoll();
+            StopTransportSpeedTimer();
+            ResetTransportSpeedDisplay();
+        }
+    }
+
+    private void EnsureTransportSpeedTimer()
+    {
+        if (_transportSpeedTimer != null)
+            return;
+        _transportSpeedTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        _transportSpeedTimer.Tick += (_, _) => RefreshTransportSpeedFromSession();
+    }
+
+    private void StopTransportSpeedTimer()
+    {
+        if (_transportSpeedTimer == null)
+            return;
+        _transportSpeedTimer.Stop();
+        _transportSpeedTimer = null;
+    }
+
+    private void ResetTransportSpeedDisplay()
+    {
+        _transportPrevUploadBytes = 0;
+        _transportPrevDownloadBytes = 0;
+        _transportPrevAtUtc = null;
+        TransportSpeedText = "↑0 B/s ↓0 B/s";
+    }
+
+    private void RefreshTransportSpeedFromSession()
+    {
+        if (!IsSessionActive || _session == null || !_session.TryGetTransportStats(out var up, out var down))
+        {
+            ResetTransportSpeedDisplay();
+            return;
+        }
+
+        var now = DateTime.UtcNow;
+        if (!_transportPrevAtUtc.HasValue)
+        {
+            _transportPrevAtUtc = now;
+            _transportPrevUploadBytes = up;
+            _transportPrevDownloadBytes = down;
+            return;
+        }
+
+        var dt = (now - _transportPrevAtUtc.Value).TotalSeconds;
+        if (dt <= 0.05)
+            return;
+
+        var upDelta = up >= _transportPrevUploadBytes ? up - _transportPrevUploadBytes : 0;
+        var downDelta = down >= _transportPrevDownloadBytes ? down - _transportPrevDownloadBytes : 0;
+        _transportPrevAtUtc = now;
+        _transportPrevUploadBytes = up;
+        _transportPrevDownloadBytes = down;
+
+        var upPerSec = upDelta / dt;
+        var downPerSec = downDelta / dt;
+        TransportSpeedText = $"↑{FormatRate(upPerSec)} ↓{FormatRate(downPerSec)}";
+    }
+
+    private static string FormatRate(double bytesPerSec)
+    {
+        if (bytesPerSec >= 1024 * 1024)
+            return $"{bytesPerSec / (1024 * 1024):0.00} MB/s";
+        if (bytesPerSec >= 1024)
+            return $"{bytesPerSec / 1024:0.0} KB/s";
+        return $"{bytesPerSec:0} B/s";
     }
 
     private void ClearShootingUi()
@@ -243,6 +319,7 @@ public partial class MainWindowViewModel
             _shootingSyncFromCamera = false;
         }
         ExposureCompensationHint = "";
+        ResetTransportSpeedDisplay();
     }
 
     private void ApplyShootingJsonFromSession()
@@ -468,7 +545,17 @@ public partial class MainWindowViewModel
                 PreviewImage = null;
                 LuminanceHistogramBins = null;
                 SdkAfFocusFrames = null;
-                StatusMessage = "LiveView 已关闭：相机进入静默待机（取流停止，拍照仍可用）。";
+                try
+                {
+                    var probe = await _session.ProbeLiveViewDisabledStateAsync().ConfigureAwait(true);
+                    StatusMessage = probe.IsLikelyStopped
+                        ? $"LiveView 已关闭：停流探测通过（{probe.TotalProbes} 次探测均无新帧），拍照仍可用。"
+                        : $"LiveView 已关闭：但停流探测发现仍有帧（{probe.FramesDetectedProbes}/{probe.TotalProbes}）。可能仅关闭了显示链路。";
+                }
+                catch (Exception ex)
+                {
+                    StatusMessage = "LiveView 已关闭：停流探测未完成 - " + ex.Message;
+                }
             }
             else
             {

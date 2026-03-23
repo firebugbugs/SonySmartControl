@@ -75,6 +75,25 @@ internal static class SonyCrBridgeNative
     [DllImport(Dll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     internal static extern int SonyCr_SetDeviceSetting(uint key, uint value);
 
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    internal static extern int SonyCr_GetTransportStats(out ulong outUploadBytes, out ulong outDownloadBytes);
+
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    internal static extern void SonyCr_ResetTransportStats();
+
+    /// <summary>
+    /// 读取相机端 SD 卡容量/使用量估算（桥接层在 native 侧统计两卡槽）。
+    /// 返回中的“容量/使用量”是基于仍图传输大小的估算值，不保证等同于卡厂商标称容量。
+    /// </summary>
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    internal static extern int SonyCr_GetSdCardUsageEstimate(
+        out ulong outSlot1TotalBytes,
+        out ulong outSlot1UsedBytes,
+        out int outSlot1HasCard,
+        out ulong outSlot2TotalBytes,
+        out ulong outSlot2UsedBytes,
+        out int outSlot2HasCard);
+
     /// <summary>
     /// 不使用 DllImport 直接绑定：旧版 SonyCrBridge.dll 可能未导出 <c>SonyCr_SetSaveInfoUtf16</c>，
     /// 若用 DllImport 会在首次调用时抛 <see cref="EntryPointNotFoundException"/>。

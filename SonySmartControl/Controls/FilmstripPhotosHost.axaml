@@ -2,14 +2,25 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="SonySmartControl.Controls.FilmstripPhotosHost"
              Focusable="False">
-    <ScrollViewer x:Name="ScrollHost"
-                  HorizontalScrollBarVisibility="Auto"
-                  VerticalScrollBarVisibility="Disabled"
-                  Focusable="False"
-                  MaxHeight="144">
-        <StackPanel x:Name="ItemsPanelHost"
-                    Orientation="Horizontal"
-                    Spacing="10"
-                    Focusable="False"/>
-    </ScrollViewer>
+    <Grid x:Name="RootHost" Background="Transparent">
+        <ScrollViewer x:Name="ScrollHost"
+                      HorizontalScrollBarVisibility="Auto"
+                      VerticalScrollBarVisibility="Disabled"
+                      Focusable="False"
+                      MaxHeight="144">
+            <StackPanel x:Name="ItemsPanelHost"
+                        Orientation="Horizontal"
+                        Spacing="10"
+                        Focusable="False"/>
+        </ScrollViewer>
+        <Border x:Name="SelectionRect"
+                IsHitTestVisible="False"
+                IsVisible="False"
+                ZIndex="10"
+                BorderThickness="1"
+                BorderBrush="#7F2E7DF6"
+                Background="#332E7DF6"
+                HorizontalAlignment="Left"
+                VerticalAlignment="Top"/>
+    </Grid>
 </UserControl>

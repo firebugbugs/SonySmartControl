@@ -34,7 +34,7 @@ public partial class WheelPickerCombo : UserControl
     private bool _allowCloseOnSelection;
     private bool _syncingListSelection;
 
-    private static readonly TimeSpan WheelHoverRequired = TimeSpan.FromMilliseconds(250);
+    private static readonly TimeSpan WheelHoverRequired = TimeSpan.FromMilliseconds(750);
 
     /// <summary>指针进入 <see cref="RootBorder"/> 的 UTC 时间；离开则清空。滚轮仅当悬停持续满 <see cref="WheelHoverRequired"/> 后生效。</summary>
     private DateTime? _wheelHoverStartedUtc;
@@ -170,10 +170,7 @@ public partial class WheelPickerCombo : UserControl
             return;
         if (_wheelHoverStartedUtc is not { } started ||
             DateTime.UtcNow - started < WheelHoverRequired)
-        {
-            e.Handled = true;
             return;
-        }
 
         var items = ItemsSource as IList;
         if (items == null || items.Count == 0)
@@ -189,10 +186,7 @@ public partial class WheelPickerCombo : UserControl
 
         var n = Math.Clamp(idx + step, 0, items.Count - 1);
         if (n == idx)
-        {
-            e.Handled = true;
             return;
-        }
 
         SelectedIndex = n;
         e.Handled = true;

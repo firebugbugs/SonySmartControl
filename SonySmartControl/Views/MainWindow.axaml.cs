@@ -1,4 +1,5 @@
 using System;
+using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -19,6 +20,7 @@ public partial class MainWindow : Window
 
     private bool _focusHoldHandlersHooked;
     private bool _captureHoldHandlersHooked;
+    private Task? _capturePressInFlight;
 
     private static readonly BoxShadows CardRestoredShadow = BoxShadows.Parse("0 12 40 0 #28000000");
 
@@ -28,11 +30,38 @@ public partial class MainWindow : Window
         Closing += OnClosingAsync;
     }
 
-    /// <summary>快门速度/快门类型下拉：未展开时吞掉滚轮，避免误改。</summary>
+    /// <summary>快门相关下拉：未展开时阻止误改，但将滚轮转为外层菜单滚动。</summary>
     private void ShutterCombo_OnPointerWheelChanged(object? sender, PointerWheelEventArgs e)
     {
-        if (sender is ComboBox cb && !cb.IsDropDownOpen)
+        if (sender is not ComboBox cb || cb.IsDropDownOpen)
+            return;
+
+        var sv = cb.FindAncestorOfType<ScrollViewer>();
+        if (sv == null)
+        {
             e.Handled = true;
+            return;
+        }
+
+        var maxY = Math.Max(0, sv.Extent.Height - sv.Viewport.Height);
+        if (maxY <= 0)
+        {
+            e.Handled = true;
+            return;
+        }
+
+        const double linePixels = 48.0;
+        const double typicalNotch = 120.0;
+        var deltaY = -e.Delta.Y / typicalNotch * linePixels;
+        if (Math.Abs(deltaY) < 1e-6)
+        {
+            e.Handled = true;
+            return;
+        }
+
+        var newY = Math.Clamp(sv.Offset.Y + deltaY, 0, maxY);
+        sv.Offset = new Vector(sv.Offset.X, newY);
+        e.Handled = true;
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
@@ -119,6 +148,19 @@ public partial class MainWindow : Window
                 return null;
             return folders[0].TryGetLocalPath();
         };
+    }
+
+    private void CameraConnectionBadgeButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (ConnectedActionsPopup == null)
+            return;
+        var next = !ConnectedActionsPopup.IsOpen;
+        ConnectedActionsPopup.IsOpen = next;
+        if (next && DataContext is MainWindowViewModel vm)
+        {
+            vm.ShowFormatSdCardConfirm = false;
+            _ = vm.RefreshSdCardUsageAsync();
+        }
     }
 
     private void MainWindow_OnKeyDown(object? sender, KeyEventArgs e)
@@ -381,13 +423,26 @@ public partial class MainWindow : Window
             return;
 
         e.Pointer.Capture(btn);
-        await vm.CapturePointerPressedAsync();
+        var pressTask = vm.CapturePointerPressedAsync();
+        _capturePressInFlight = pressTask;
+        try
+        {
+            await pressTask;
+        }
+        finally
+        {
+            if (ReferenceEquals(_capturePressInFlight, pressTask))
+                _capturePressInFlight = null;
+        }
     }
 
     private async void CaptureHoldButton_OnPointerReleased(object? sender, PointerReleasedEventArgs e)
     {
         if (sender is not Button btn || DataContext is not MainWindowViewModel vm)
             return;
+        var pressTask = _capturePressInFlight;
+        if (pressTask != null)
+            await pressTask;
         // 须先完成「松开快门」再 ClearCapture：否则 Capture(null) 会同步触发 PointerCaptureLost，
         // CapturePointerCancelledAsync 先于 CapturePointerReleasedAsync 清空半按状态，导致本次松手不拍照。
         await vm.CapturePointerReleasedAsync();
@@ -398,6 +453,9 @@ public partial class MainWindow : Window
     {
         if (DataContext is not MainWindowViewModel vm)
             return;
+        var pressTask = _capturePressInFlight;
+        if (pressTask != null)
+            await pressTask;
         await vm.CapturePointerCancelledAsync();
     }
 
@@ -408,7 +466,17 @@ public partial class MainWindow : Window
         if (e.Key != Key.Space && e.Key != Key.Enter)
             return;
         e.Handled = true;
-        await vm.CapturePointerPressedAsync();
+        var pressTask = vm.CapturePointerPressedAsync();
+        _capturePressInFlight = pressTask;
+        try
+        {
+            await pressTask;
+        }
+        finally
+        {
+            if (ReferenceEquals(_capturePressInFlight, pressTask))
+                _capturePressInFlight = null;
+        }
     }
 
     private async void CaptureHoldButton_OnKeyUp(object? sender, KeyEventArgs e)
@@ -418,6 +486,9 @@ public partial class MainWindow : Window
         if (e.Key != Key.Space && e.Key != Key.Enter)
             return;
         e.Handled = true;
+        var pressTask = _capturePressInFlight;
+        if (pressTask != null)
+            await pressTask;
         await vm.CapturePointerReleasedAsync();
     }
 

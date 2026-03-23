@@ -93,6 +93,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     public bool IsStaticReviewVisible => !IsViewingLiveMonitor;
 
     [ObservableProperty] private string _statusMessage = "就绪：点击「连接」通过 CrSDK 接入相机。";
+    [ObservableProperty] private string _transportSpeedText = "↑0 B/s ↓0 B/s";
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsConnectEnabled))]
@@ -183,6 +184,19 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     [ObservableProperty] private bool _flashSectionExpanded = true;
 
     [ObservableProperty] private bool _auxDisplaySectionExpanded = true;
+    [ObservableProperty] private bool _timelapseSectionExpanded = true;
+    [ObservableProperty] private bool _showFormatSdCardConfirm;
+
+    // SD 卡容量/使用量（估算）：用于“格式化 SD 卡”浮窗里的进度条展示。
+    [ObservableProperty] private bool _sdCardSlot1HasCard;
+    [ObservableProperty] private string _sdCardSlot1SummaryText = "—";
+    [ObservableProperty] private double _sdCardSlot1UsagePercent;
+    [ObservableProperty] private IBrush _sdCardSlot1ProgressBrush = new SolidColorBrush(Color.Parse("#2FBF71")); // 绿色：<=80%
+
+    [ObservableProperty] private bool _sdCardSlot2HasCard;
+    [ObservableProperty] private string _sdCardSlot2SummaryText = "—";
+    [ObservableProperty] private double _sdCardSlot2UsagePercent;
+    [ObservableProperty] private IBrush _sdCardSlot2ProgressBrush = new SolidColorBrush(Color.Parse("#F59E0B")); // 橙色：>80%，默认先给橙色防止误显示绿色
 
     /// <summary>右侧遥控区：0=拍照，1=摄影。</summary>
     [ObservableProperty]
@@ -196,6 +210,9 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
 
     private ICameraPreviewSession? _session;
     private Bitmap? _lastFrameOwner;
+
+    private bool _sdCardUsageRefreshInFlight;
+    private CancellationTokenSource? _sdCardUsageRefreshCts;
 
     public MainWindowViewModel()
     {
@@ -224,6 +241,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         ExposureSectionExpanded = true;
         FlashSectionExpanded = true;
         AuxDisplaySectionExpanded = true;
+        TimelapseSectionExpanded = true;
     }
 
     [RelayCommand]
@@ -234,6 +252,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         ExposureSectionExpanded = false;
         FlashSectionExpanded = false;
         AuxDisplaySectionExpanded = false;
+        TimelapseSectionExpanded = false;
     }
 
     [RelayCommand]
@@ -1245,6 +1264,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             _ = PushCaptureFormatToCameraAsync();
     }
 
+
     /// <summary>用户更改「仅 JPEG / RAW / RAW+JPEG」后立即同步 <see cref="CrSdkDevicePropertyCodes.FileType"/>，避免仍按旧格式拍摄。</summary>
     private async Task PushCaptureFormatToCameraAsync()
     {
@@ -1538,6 +1558,188 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
 
         await ShutdownCameraSessionAsync().ConfigureAwait(true);
         StatusMessage = "已断开。";
+    }
+
+    /// <summary>
+    /// 刷新“SD 卡容量/使用量估算”进度条数据（给「格式化 SD 卡」浮窗展示）。
+    /// </summary>
+    public async Task RefreshSdCardUsageAsync(bool force = false)
+    {
+        if (!IsSessionActive || _session == null)
+            return;
+
+        if (_sdCardUsageRefreshInFlight && !force)
+            return;
+
+        _sdCardUsageRefreshInFlight = true;
+
+        try
+        {
+            CancellationTokenSource? old = null;
+            lock (this)
+            {
+                old = _sdCardUsageRefreshCts;
+                _sdCardUsageRefreshCts = new CancellationTokenSource();
+            }
+            old?.Cancel();
+            old?.Dispose();
+
+            var token = _sdCardUsageRefreshCts?.Token ?? CancellationToken.None;
+
+            // UI 侧先清空以避免误导（取到新值后再更新）。
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                SdCardSlot1HasCard = false;
+                SdCardSlot1SummaryText = "加载中…";
+                SdCardSlot1UsagePercent = 0;
+
+                SdCardSlot2HasCard = false;
+                SdCardSlot2SummaryText = "加载中…";
+                SdCardSlot2UsagePercent = 0;
+            });
+
+            var usage = await _session.TryGetSdCardUsageEstimateAsync(token).ConfigureAwait(false);
+            if (usage == null || !IsSessionActive)
+                return;
+
+            static string FormatStorageHuman(ulong bytes)
+            {
+                const double kb = 1024d;
+                const double mb = 1024d * 1024d;
+                const double gb = 1024d * 1024d * 1024d;
+                if (bytes >= (ulong)gb)
+                    return $"{(bytes / gb):0.0}GB";
+                if (bytes >= (ulong)mb)
+                    return $"{(bytes / mb):0.0}MB";
+                if (bytes >= (ulong)kb)
+                    return $"{(bytes / kb):0.0}KB";
+                return $"{bytes}B";
+            }
+
+            static double Clamp0to100(double v) => Math.Max(0, Math.Min(100, v));
+
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (usage.Value.Slot1HasCard)
+                {
+                    SdCardSlot1HasCard = true;
+                    var percent = usage.Value.Slot1TotalBytes == 0
+                        ? 0
+                        : Clamp0to100(usage.Value.Slot1UsedBytes * 100d / usage.Value.Slot1TotalBytes);
+
+                    SdCardSlot1UsagePercent = percent;
+                    SdCardSlot1ProgressBrush = percent > 80
+                        ? new SolidColorBrush(Color.Parse("#F59E0B"))
+                        : new SolidColorBrush(Color.Parse("#2FBF71"));
+                    SdCardSlot1SummaryText =
+                        $"容量 {FormatStorageHuman(usage.Value.Slot1TotalBytes)}，使用 {FormatStorageHuman(usage.Value.Slot1UsedBytes)} ({percent:0.0}%)";
+                }
+                else
+                {
+                    SdCardSlot1HasCard = false;
+                    SdCardSlot1SummaryText = "未插卡";
+                    SdCardSlot1UsagePercent = 0;
+                }
+
+                if (usage.Value.Slot2HasCard)
+                {
+                    SdCardSlot2HasCard = true;
+                    var percent = usage.Value.Slot2TotalBytes == 0
+                        ? 0
+                        : Clamp0to100(usage.Value.Slot2UsedBytes * 100d / usage.Value.Slot2TotalBytes);
+
+                    SdCardSlot2UsagePercent = percent;
+                    SdCardSlot2ProgressBrush = percent > 80
+                        ? new SolidColorBrush(Color.Parse("#F59E0B"))
+                        : new SolidColorBrush(Color.Parse("#2FBF71"));
+                    SdCardSlot2SummaryText =
+                        $"容量 {FormatStorageHuman(usage.Value.Slot2TotalBytes)}，使用 {FormatStorageHuman(usage.Value.Slot2UsedBytes)} ({percent:0.0}%)";
+                }
+                else
+                {
+                    SdCardSlot2HasCard = false;
+                    SdCardSlot2SummaryText = "未插卡";
+                    SdCardSlot2UsagePercent = 0;
+                }
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            // ignore
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = "获取 SD 卡容量失败：" + ex.Message;
+        }
+        finally
+        {
+            _sdCardUsageRefreshInFlight = false;
+        }
+    }
+
+    private bool CanFormatSdCard() => IsSessionActive && !_captureTaskActive && !IsConnecting;
+
+    [RelayCommand(CanExecute = nameof(CanFormatSdCard))]
+    private void RequestFormatSdCardConfirm() => ShowFormatSdCardConfirm = true;
+
+    [RelayCommand]
+    private void CancelFormatSdCardConfirm() => ShowFormatSdCardConfirm = false;
+
+    /// <summary>格式化相机存储卡（SD 卡）。按官方 CrCommandId_MediaFormat：SLOT1=Up，SLOT2=Down。</summary>
+    [RelayCommand(CanExecute = nameof(CanFormatSdCard))]
+    private async Task ConfirmFormatSdCard()
+    {
+        if (_session == null)
+            return;
+
+        ShowFormatSdCardConfirm = false;
+        StatusMessage = "正在格式化 SD 卡（SLOT1/2），请稍候…";
+        string? partialErrorText = null;
+        try
+        {
+            // 原生命令是同步调用，放到后台线程避免阻塞 UI。
+            await Task.Run(() =>
+            {
+                var errors = new List<string>();
+                var okCount = 0;
+                void TryOne(CrSdkCommandParam slotParam, string slotName)
+                {
+                    try
+                    {
+                        SonyCrSdk.SendCommand(CrSdkCommandIds.MediaFormat, slotParam);
+                        okCount++;
+                    }
+                    catch (Exception ex)
+                    {
+                        errors.Add($"{slotName} 失败：{ex.Message}");
+                    }
+                }
+
+                TryOne(CrSdkCommandParam.Up, "SLOT1");
+                TryOne(CrSdkCommandParam.Down, "SLOT2");
+
+                if (okCount > 0)
+                {
+                    if (errors.Count > 0)
+                        partialErrorText = string.Join("；", errors);
+                    return;
+                }
+
+                // 两个槽都失败：抛出去统一在 UI 线程写 StatusMessage
+                throw new InvalidOperationException(string.Join("；", errors));
+            }).ConfigureAwait(true);
+
+            StatusMessage = partialErrorText == null
+                ? "SD 卡格式化完成（如有需要请等待机身重建列表）。"
+                : "SD 卡格式化完成，但部分槽失败：" + partialErrorText;
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = "格式化 SD 卡失败: " + ex.Message;
+        }
+
+        // 格式化会清空内容；这里刷新一次进度条估算。
+        _ = RefreshSdCardUsageAsync(force: true);
     }
 
     private void OnFrameReceived(object? sender, Bitmap frame)

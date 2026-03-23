@@ -3,6 +3,20 @@ using SonySmartControl.Interop;
 
 namespace SonySmartControl.Services.Camera;
 
+public readonly record struct LiveViewProbeResult(int TotalProbes, int FramesDetectedProbes)
+{
+    public bool IsLikelyStopped => FramesDetectedProbes == 0;
+}
+
+/// <summary>SD 卡容量/使用量估算结果（以“当前仍图传输大小”换算容量，按卡槽分别统计）。</summary>
+public readonly record struct SdCardUsageEstimate(
+    bool Slot1HasCard,
+    ulong Slot1TotalBytes,
+    ulong Slot1UsedBytes,
+    bool Slot2HasCard,
+    ulong Slot2TotalBytes,
+    ulong Slot2UsedBytes);
+
 /// <summary>
 /// 相机实时预览会话：连接后通过 <see cref="FrameReceived"/> 推送 JPEG 解码后的位图。
 /// </summary>
@@ -18,6 +32,24 @@ public interface ICameraPreviewSession : IAsyncDisposable
     Task StartPreviewAsync(CancellationToken cancellationToken = default);
     /// <summary>设置 LiveView 取流开关：关闭后 CMOS 停止取流，拍照控制链路保持可用。</summary>
     Task SetLiveViewEnabledAsync(bool enabled, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 在 LiveView 已关闭后，主动探测底层是否仍可读到预览帧（用于验证是否真正停流）。
+    /// </summary>
+    Task<LiveViewProbeResult> ProbeLiveViewDisabledStateAsync(
+        int probeCount = 6,
+        int probeIntervalMs = 250,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 读取当前会话累计上传/下载字节统计（桥接层计数，尽量贴近相机链路）。
+    /// </summary>
+    bool TryGetTransportStats(out ulong uploadBytes, out ulong downloadBytes);
+
+    /// <summary>
+    /// 读取相机端 SD 卡每个卡槽的容量/使用量估算（用于 UI 展示）。
+    /// </summary>
+    Task<SdCardUsageEstimate?> TryGetSdCardUsageEstimateAsync(CancellationToken cancellationToken = default);
 
     Task DisconnectAsync();
 

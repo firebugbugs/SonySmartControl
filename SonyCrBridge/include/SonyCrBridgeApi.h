@@ -133,6 +133,27 @@ SONY_CR_API SonyCrStatus SonyCr_SendCommand(unsigned int commandId, unsigned int
 /** 对应 SCRSDK::SetDeviceSetting；key 见 CrDefines.h SettingKey（如 0 = EnableLiveView）。 */
 SONY_CR_API SonyCrStatus SonyCr_SetDeviceSetting(unsigned int key, unsigned int value);
 
+/** 获取桥接层统计到的相机会话上传/下载总字节数（会话维度，非系统总网速）。 */
+SONY_CR_API SonyCrStatus SonyCr_GetTransportStats(unsigned long long* outUploadBytes, unsigned long long* outDownloadBytes);
+
+/** 重置桥接层上传/下载字节统计。通常在连接建立后调用。 */
+SONY_CR_API void SonyCr_ResetTransportStats(void);
+
+/**
+ * 读取相机端 SD 卡容量/使用量估算（桥接层在 native 侧统计两卡槽）。
+ *
+ * - outSlotXUsedBytes/outSlotXTotalBytes：基于仍图“传输大小”dp_Still_Image_Trans_Size 与
+ *   (已存在内容个数 + MediaSLOTx_RemainingNumber) 进行换算的估算值。
+ * - outSlotXHasCard：卡槽存在且可用于统计时为 1，否则为 0。
+ */
+SONY_CR_API SonyCrStatus SonyCr_GetSdCardUsageEstimate(
+    unsigned long long* outSlot1TotalBytes,
+    unsigned long long* outSlot1UsedBytes,
+    int* outSlot1HasCard,
+    unsigned long long* outSlot2TotalBytes,
+    unsigned long long* outSlot2UsedBytes,
+    int* outSlot2HasCard);
+
 /**
  * 对应 SCRSDK::SetSaveInfo（遥控拍摄保存到 PC 的路径/前缀）。
  * Windows 下 path/prefix 为 UTF-16（wchar_t）；saveNumber 为 CrSETSAVEINFO_AUTO_NUMBER(-1) 表示自动编号。

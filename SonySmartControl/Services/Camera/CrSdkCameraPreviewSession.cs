@@ -128,13 +128,155 @@ public sealed class CrSdkCameraPreviewSession : ICameraPreviewSession
                 }
             }
 
-            // 关闭传感器取流，进入静默待机。
+            // 关闭传感器取流，进入静默待机（相机端停流，不只是 PC 端停拉帧）。
+            SonyCrSdk.EnsurePriorityKeyPcRemote();
             SonyCrSdk.SetDeviceSetting(CrSdkSettingKey.EnableLiveView, 0);
+
+            // 关流后桥接/SDK 可能残留 1 帧缓存；主动冲刷，避免后续探测把缓存误判为“仍在取流”。
+            DrainPendingLiveViewFrames();
             return;
         }
 
+        SonyCrSdk.EnsurePriorityKeyPcRemote();
         SonyCrSdk.SetDeviceSetting(CrSdkSettingKey.EnableLiveView, 1);
         await StartPreviewAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<LiveViewProbeResult> ProbeLiveViewDisabledStateAsync(
+        int probeCount = 6,
+        int probeIntervalMs = 250,
+        CancellationToken cancellationToken = default)
+    {
+        probeCount = Math.Clamp(probeCount, 1, 30);
+        probeIntervalMs = Math.Clamp(probeIntervalMs, 50, 2000);
+
+        lock (_gate)
+        {
+            if (!_sdkConnected)
+                throw new InvalidOperationException("未连接相机，无法探测 LiveView 状态。");
+            if (_liveViewEnabled)
+                throw new InvalidOperationException("LiveView 仍处于开启状态，无法进行停流探测。");
+            if (_loopTask != null)
+                throw new InvalidOperationException("预览循环仍在运行，无法进行停流探测。");
+        }
+
+        var hits = 0;
+        var buffer = new byte[InitialJpegBufferBytes];
+
+        // 预热读取并丢弃 1 次，规避关流后偶发缓存首帧。
+        TryPullOneLiveViewFrame(ref buffer, out _);
+
+        for (var i = 0; i < probeCount; i++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var st = TryPullOneLiveViewFrame(ref buffer, out var written);
+
+            if (st == (int)SonyCrStatus.Ok && written > 0)
+                hits++;
+
+            if (i < probeCount - 1)
+                await Task.Delay(probeIntervalMs, cancellationToken).ConfigureAwait(false);
+        }
+
+        return new LiveViewProbeResult(probeCount, hits);
+    }
+
+    public bool TryGetTransportStats(out ulong uploadBytes, out ulong downloadBytes)
+    {
+        uploadBytes = 0;
+        downloadBytes = 0;
+        lock (_gate)
+        {
+            if (!_sdkConnected)
+                return false;
+        }
+
+        try
+        {
+            var st = SonyCrBridgeNative.SonyCr_GetTransportStats(out uploadBytes, out downloadBytes);
+            return st == (int)SonyCrStatus.Ok;
+        }
+        catch (EntryPointNotFoundException)
+        {
+            return false;
+        }
+        catch (DllNotFoundException)
+        {
+            return false;
+        }
+    }
+
+    public Task<SdCardUsageEstimate?> TryGetSdCardUsageEstimateAsync(CancellationToken cancellationToken = default)
+    {
+        return Task.Run<SdCardUsageEstimate?>(
+            () =>
+            {
+                ulong slot1Total = 0;
+                ulong slot1Used = 0;
+                int slot1HasCardInt = 0;
+                ulong slot2Total = 0;
+                ulong slot2Used = 0;
+                int slot2HasCardInt = 0;
+
+                lock (_gate)
+                {
+                    if (!_sdkConnected)
+                        return null;
+                }
+
+                try
+                {
+                    var st = SonyCrBridgeNative.SonyCr_GetSdCardUsageEstimate(
+                        out slot1Total,
+                        out slot1Used,
+                        out slot1HasCardInt,
+                        out slot2Total,
+                        out slot2Used,
+                        out slot2HasCardInt);
+
+                    if (st != (int)SonyCrStatus.Ok)
+                        return null;
+
+                    return new SdCardUsageEstimate(
+                        slot1HasCardInt != 0,
+                        slot1Total,
+                        slot1Used,
+                        slot2HasCardInt != 0,
+                        slot2Total,
+                        slot2Used);
+                }
+                catch (EntryPointNotFoundException)
+                {
+                    return null;
+                }
+                catch (DllNotFoundException)
+                {
+                    return null;
+                }
+            },
+            cancellationToken);
+    }
+
+    private static void DrainPendingLiveViewFrames()
+    {
+        var buffer = new byte[InitialJpegBufferBytes];
+        for (var i = 0; i < 4; i++)
+        {
+            var st = TryPullOneLiveViewFrame(ref buffer, out var written);
+            if (st != (int)SonyCrStatus.Ok || written <= 0)
+                break;
+        }
+    }
+
+    private static int TryPullOneLiveViewFrame(ref byte[] buffer, out int written)
+    {
+        var st = SonyCrBridgeNative.SonyCr_LiveView_GetLastJpeg(buffer, buffer.Length, out written);
+        if (st != (int)SonyCrStatus.ErrBufferTooSmall)
+            return st;
+
+        buffer = new byte[Math.Min(buffer.Length * 2, 64 * 1024 * 1024)];
+        return SonyCrBridgeNative.SonyCr_LiveView_GetLastJpeg(buffer, buffer.Length, out written);
     }
 
     public async Task DisconnectAsync()

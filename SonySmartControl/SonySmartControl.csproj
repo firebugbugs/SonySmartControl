@@ -66,7 +66,7 @@
         <PropertyGroup>
             <_SonyCrBridgeSrc />
             <!-- 优先使用仓库内 SonyCrBridge 工程输出（与 build-windows.ps1 一致），避免误用旧 ThirdParty 或已失效的 native\ 路径 -->
-            <_SonyCrBridgeSrc Condition="'$(_SonyCrBridgeSrc)' == '' and Exists('$(MSBuildThisFileDirectory)..\..\SonyCrBridge\build\Release\SonyCrBridge.dll')">$(MSBuildThisFileDirectory)..\..\SonyCrBridge\build\Release\SonyCrBridge.dll</_SonyCrBridgeSrc>
+            <_SonyCrBridgeSrc Condition="'$(_SonyCrBridgeSrc)' == '' and Exists('$(MSBuildThisFileDirectory)..\SonyCrBridge\build\Release\SonyCrBridge.dll')">$(MSBuildThisFileDirectory)..\SonyCrBridge\build\Release\SonyCrBridge.dll</_SonyCrBridgeSrc>
             <_SonyCrBridgeSrc Condition="'$(_SonyCrBridgeSrc)' == '' and Exists('$(MSBuildThisFileDirectory)ThirdParty\Native\SonyCrBridge.dll')">$(MSBuildThisFileDirectory)ThirdParty\Native\SonyCrBridge.dll</_SonyCrBridgeSrc>
             <_SonyCrBridgeSrc Condition="'$(_SonyCrBridgeSrc)' == '' and Exists('$(MSBuildThisFileDirectory)..\native\SonyCrBridge\build\Release\SonyCrBridge.dll')">$(MSBuildThisFileDirectory)..\native\SonyCrBridge\build\Release\SonyCrBridge.dll</_SonyCrBridgeSrc>
             <_SonyCrBridgeSrc Condition="'$(_SonyCrBridgeSrc)' == '' and Exists('$(MSBuildThisFileDirectory)..\native\SonyCrBridge\build\Debug\SonyCrBridge.dll')">$(MSBuildThisFileDirectory)..\native\SonyCrBridge\build\Debug\SonyCrBridge.dll</_SonyCrBridgeSrc>

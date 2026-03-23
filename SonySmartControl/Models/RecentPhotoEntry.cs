@@ -64,6 +64,11 @@ public sealed partial class RecentPhotoEntry : ObservableObject, IDisposable
     [ObservableProperty]
     private bool _isFilmstripSelected;
 
+    [ObservableProperty]
+    private bool _isBatchSelected;
+
+    public bool IsFilmstripHighlightVisible => IsFilmstripSelected || IsBatchSelected;
+
     public RecentPhotoEntry(string filePath)
     {
         FilePath = filePath ?? throw new ArgumentNullException(nameof(filePath));
@@ -86,6 +91,9 @@ public sealed partial class RecentPhotoEntry : ObservableObject, IDisposable
                  && string.Equals(viewingRecentPhotoPath, FilePath, StringComparison.OrdinalIgnoreCase);
         IsFilmstripSelected = on;
     }
+
+    partial void OnIsFilmstripSelectedChanged(bool value) => OnPropertyChanged(nameof(IsFilmstripHighlightVisible));
+    partial void OnIsBatchSelectedChanged(bool value) => OnPropertyChanged(nameof(IsFilmstripHighlightVisible));
 
     /// <summary>在后台读盘、按 <see cref="DiskImagePreviewLoader.UiDisplayScale"/> 缩小后解码，再通过回调交 UI 赋值。</summary>
     public void LoadThumbnailAsync(Action<RecentPhotoEntry, IImage?> onUiThread)

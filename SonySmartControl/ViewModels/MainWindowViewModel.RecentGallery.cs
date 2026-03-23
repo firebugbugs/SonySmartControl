@@ -25,6 +25,7 @@ public partial class MainWindowViewModel
     private const int FilmstripMaxSlotsCap = 200;
 
     private CancellationTokenSource? _filmstripWidthDebounceCts;
+    private CancellationTokenSource? _recentCaptureSyncCts;
     private int _filmstripMaxSlots = 10;
 
     /// <summary>快速切换胶片条目时递增，用于丢弃过期的全图解码结果。</summary>
@@ -371,46 +372,132 @@ public partial class MainWindowViewModel
     /// <summary>拍照成功后扫描保存目录，将最新 JPEG/PNG 插入最近列表（条数受底部胶片可视宽度限制）。</summary>
     private async Task RegisterRecentCaptureAsync()
     {
+        _recentCaptureSyncCts?.Cancel();
+        _recentCaptureSyncCts?.Dispose();
+        var cts = new CancellationTokenSource();
+        _recentCaptureSyncCts = cts;
+
         try
         {
-            await Task.Delay(450).ConfigureAwait(false);
-            await Dispatcher.UIThread.InvokeAsync(RegisterRecentCaptureCore);
+            await Task.Delay(220, cts.Token).ConfigureAwait(false);
+
+            var stableRounds = 0;
+            for (var i = 0; i < 10; i++)
+            {
+                cts.Token.ThrowIfCancellationRequested();
+                var changed = await Dispatcher.UIThread
+                    .InvokeAsync(() => SyncRecentGalleryWithDisk() > 0);
+
+                if (changed)
+                    stableRounds = 0;
+                else
+                    stableRounds++;
+
+                if (stableRounds >= 2)
+                    break;
+
+                await Task.Delay(220 + i * 40, cts.Token).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // 忽略
         }
         catch
         {
             // 忽略
+        }
+        finally
+        {
+            if (ReferenceEquals(_recentCaptureSyncCts, cts))
+            {
+                _recentCaptureSyncCts = null;
+                cts.Dispose();
+            }
+            else
+            {
+                cts.Dispose();
+            }
         }
     }
 
     private void RegisterRecentCaptureCore()
     {
+        _ = SyncRecentGalleryWithDisk();
+    }
+
+    /// <summary>将底部胶片与磁盘最近文件对齐：补新图、补老图、移除已不存在项，并保持目标顺序。</summary>
+    private int SyncRecentGalleryWithDisk()
+    {
         try
         {
             var dir = SaveDirectory;
             if (string.IsNullOrWhiteSpace(dir) || !Directory.Exists(dir))
-                return;
+                return 0;
 
-            var path = EnumerateRecentImagePaths(dir, 1).FirstOrDefault();
-            if (path == null)
-                return;
-            if (RecentPhotos.Any(x => string.Equals(x.FilePath, path, StringComparison.OrdinalIgnoreCase)))
-                return;
+            var desired = EnumerateRecentImagePaths(dir, _filmstripMaxSlots).ToList();
+            if (desired.Count == 0)
+                return 0;
 
-            var entry = new RecentPhotoEntry(path);
-            RecentPhotos.Insert(0, entry);
+            var changed = 0;
+            var desiredSet = new HashSet<string>(desired, StringComparer.OrdinalIgnoreCase);
+
+            for (var i = RecentPhotos.Count - 1; i >= 0; i--)
+            {
+                var current = RecentPhotos[i];
+                if (desiredSet.Contains(current.FilePath))
+                    continue;
+                RecentPhotos.RemoveAt(i);
+                current.Dispose();
+                changed++;
+            }
+
+            for (var targetIndex = 0; targetIndex < desired.Count; targetIndex++)
+            {
+                var path = desired[targetIndex];
+
+                var existingIndex = -1;
+                for (var i = 0; i < RecentPhotos.Count; i++)
+                {
+                    if (string.Equals(RecentPhotos[i].FilePath, path, StringComparison.OrdinalIgnoreCase))
+                    {
+                        existingIndex = i;
+                        break;
+                    }
+                }
+
+                if (existingIndex >= 0)
+                {
+                    if (existingIndex == targetIndex)
+                        continue;
+
+                    var existing = RecentPhotos[existingIndex];
+                    RecentPhotos.RemoveAt(existingIndex);
+                    RecentPhotos.Insert(targetIndex, existing);
+                    changed++;
+                    continue;
+                }
+
+                var entry = new RecentPhotoEntry(path);
+                RecentPhotos.Insert(Math.Min(targetIndex, RecentPhotos.Count), entry);
+                entry.LoadThumbnailAsync(OnThumbLoaded);
+                changed++;
+            }
+
             while (RecentPhotos.Count > _filmstripMaxSlots)
             {
                 var last = RecentPhotos[^1];
                 RecentPhotos.RemoveAt(RecentPhotos.Count - 1);
                 last.Dispose();
+                changed++;
             }
 
-            entry.LoadThumbnailAsync(OnThumbLoaded);
-            entry.SyncFilmstripSelection(ViewingRecentPhotoPath);
+            SyncFilmstripThumbnailsSelection();
+            return changed;
         }
         catch
         {
-            // 忽略
+            return 0;
         }
     }
 
@@ -493,40 +580,31 @@ public partial class MainWindowViewModel
     [RelayCommand]
     private async Task DeletePreviewImageAsync(string? path)
     {
-        var primary = !string.IsNullOrWhiteSpace(path) ? path : ViewingRecentPhotoPath;
-        if (string.IsNullOrWhiteSpace(primary) || !File.Exists(primary))
+        var selectedPrimaries = RecentPhotos
+            .Where(e => e.IsBatchSelected)
+            .Select(e => e.FilePath)
+            .Where(File.Exists)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (selectedPrimaries.Count == 0)
+        {
+            var single = !string.IsNullOrWhiteSpace(path) ? path : ViewingRecentPhotoPath;
+            if (!string.IsNullOrWhiteSpace(single))
+                selectedPrimaries.Add(single);
+        }
+
+        if (selectedPrimaries.Count == 0)
         {
             StatusMessage = "未找到可删除的图片文件。";
             return;
         }
 
-        var localPaths = ListLocalGalleryFilesSameStem(primary);
+        var localPaths = selectedPrimaries
+            .SelectMany(ListLocalGalleryFilesSameStem)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
         if (localPaths.Count == 0)
             return;
-
-        string? camHint = null;
-        if (IsSessionActive)
-        {
-            var nameForCam = Path.GetFileName(primary);
-            camHint = await Task.Run(() =>
-            {
-                try
-                {
-                    var st = SonyCrSdk.TryDeleteRemoteContentMatchingFileName(nameForCam);
-                    return st switch
-                    {
-                        null => null,
-                        SonyCrStatus.Ok => "机身存储中已删除对应条目。",
-                        SonyCrStatus.ErrNotFound => null,
-                        _ => "机身侧删除未完成（可能仅 MTP 拉取、无 Remote Transfer 匹配）。",
-                    };
-                }
-                catch
-                {
-                    return "机身删除异常，已尝试删除本地文件。";
-                }
-            }).ConfigureAwait(true);
-        }
 
         foreach (var p in localPaths)
         {
@@ -550,18 +628,25 @@ public partial class MainWindowViewModel
             entry.Dispose();
         }
 
-        var wasViewing = string.Equals(ViewingRecentPhotoPath, primary, StringComparison.OrdinalIgnoreCase);
+        _ = SyncRecentGalleryWithDisk();
+
+        var deletedPathSet = new HashSet<string>(localPaths, StringComparer.OrdinalIgnoreCase);
+        var wasViewing = !string.IsNullOrWhiteSpace(ViewingRecentPhotoPath) && deletedPathSet.Contains(ViewingRecentPhotoPath);
         if (wasViewing)
         {
-            ShowLiveMonitor();
             if (RecentPhotos.Count > 0)
                 await ShowRecentPhoto(RecentPhotos[0].FilePath).ConfigureAwait(true);
+            else
+                ShowLiveMonitor();
         }
 
+        foreach (var e in RecentPhotos)
+            e.IsBatchSelected = false;
+
         SyncFilmstripThumbnailsSelection();
-        StatusMessage = string.IsNullOrEmpty(camHint)
-            ? "本地文件已删除。"
-            : camHint + " 本地文件已删除。";
+        StatusMessage = selectedPrimaries.Count > 1
+            ? $"本地文件已批量删除（{selectedPrimaries.Count} 项）。"
+            : "本地文件已删除。";
     }
 
     /// <summary>由底部胶片区域 <see cref="SizeChanged"/> 调用；按可视宽度估算条数并防抖后刷新列表。</summary>

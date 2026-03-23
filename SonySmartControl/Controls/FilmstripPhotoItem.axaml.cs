@@ -58,6 +58,9 @@ public partial class FilmstripPhotoItem : UserControl
             return;
 
         var host = this.FindAncestorOfType<FilmstripPhotosHost>();
+        if (host?.IsDragSelecting == true)
+            return;
+        host?.ClearBatchSelection();
         var cmd = host?.SelectCommand;
         if (cmd == null)
             return;
@@ -69,22 +72,12 @@ public partial class FilmstripPhotoItem : UserControl
         e.Handled = true;
     }
 
-    private void CopyMenuItem_OnClick(object? sender, RoutedEventArgs e)
-    {
-        if (DataContext is not RecentPhotoEntry entry)
-            return;
-        var host = this.FindAncestorOfType<FilmstripPhotosHost>();
-        var cmd = host?.CopyCommand;
-        var path = entry.FilePath;
-        if (cmd?.CanExecute(path) == true)
-            cmd.Execute(path);
-    }
-
     private void DeleteMenuItem_OnClick(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not RecentPhotoEntry entry)
             return;
         var host = this.FindAncestorOfType<FilmstripPhotosHost>();
+        host?.EnsureDeleteTargetSelection(entry);
         var cmd = host?.DeleteCommand;
         var path = entry.FilePath;
         if (cmd?.CanExecute(path) == true)
