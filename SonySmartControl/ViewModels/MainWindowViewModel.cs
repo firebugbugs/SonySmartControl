@@ -941,6 +941,10 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             ConnectedCameraModelName = string.IsNullOrWhiteSpace(session.ConnectedCameraModel)
                 ? "未知"
                 : session.ConnectedCameraModel;
+            _liveViewSyncFromSession = true;
+            LiveViewEnabled = true;
+            _liveViewSyncFromSession = false;
+            LiveViewEnabledControlEnabled = true;
             IsConnecting = false;
 
             try

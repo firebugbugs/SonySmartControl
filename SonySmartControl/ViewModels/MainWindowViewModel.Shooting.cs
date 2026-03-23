@@ -118,6 +118,10 @@ public partial class MainWindowViewModel
     [ObservableProperty] private bool _cameraScreenPowerOn = true;
 
     [ObservableProperty] private bool _cameraScreenPowerEnabled;
+    [ObservableProperty] private bool _liveViewEnabled = true;
+    [ObservableProperty] private bool _liveViewEnabledControlEnabled;
+    private bool _liveViewSyncFromSession;
+    private bool _liveViewSwitching;
 
     private static readonly TimeSpan ShootingUserEditPollSuppressDuration = TimeSpan.FromMilliseconds(2000);
 
@@ -181,6 +185,10 @@ public partial class MainWindowViewModel
         _shootingPollSuppressDrvUtc = null;
         _lastNonOffDispMode = null;
         CameraScreenPowerEnabled = false;
+        LiveViewEnabledControlEnabled = false;
+        _liveViewSyncFromSession = true;
+        LiveViewEnabled = true;
+        _liveViewSyncFromSession = false;
         IsVideoShootingMode = false;
         ShootingPanelOpacity = 1.0;
         ExposureModeEnabled = false;
@@ -390,6 +398,50 @@ public partial class MainWindowViewModel
         catch (Exception ex)
         {
             StatusMessage = ex.Message;
+        }
+    }
+
+    partial void OnLiveViewEnabledChanged(bool value)
+    {
+        if (_liveViewSyncFromSession || !IsSessionActive || _session == null || _liveViewSwitching)
+            return;
+
+        _ = ApplyLiveViewEnabledAsync(value);
+    }
+
+    private async Task ApplyLiveViewEnabledAsync(bool enabled)
+    {
+        if (_session == null)
+            return;
+
+        _liveViewSwitching = true;
+        LiveViewEnabledControlEnabled = false;
+        try
+        {
+            await _session.SetLiveViewEnabledAsync(enabled).ConfigureAwait(true);
+            if (!enabled)
+            {
+                PreviewImage = null;
+                LuminanceHistogramBins = null;
+                SdkAfFocusFrames = null;
+                StatusMessage = "LiveView 已关闭：相机进入静默待机（取流停止，拍照仍可用）。";
+            }
+            else
+            {
+                StatusMessage = "LiveView 已开启。";
+            }
+        }
+        catch (Exception ex)
+        {
+            _liveViewSyncFromSession = true;
+            LiveViewEnabled = !enabled;
+            _liveViewSyncFromSession = false;
+            StatusMessage = "切换 LiveView 失败: " + ex.Message;
+        }
+        finally
+        {
+            LiveViewEnabledControlEnabled = IsSessionActive;
+            _liveViewSwitching = false;
         }
     }
 

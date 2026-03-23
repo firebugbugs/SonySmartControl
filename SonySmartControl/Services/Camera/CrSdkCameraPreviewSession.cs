@@ -19,6 +19,7 @@ public sealed class CrSdkCameraPreviewSession : ICameraPreviewSession
     private CancellationTokenSource? _cts;
     private Task? _loopTask;
     public string? ConnectedCameraModel { get; private set; }
+    private bool _liveViewEnabled = true;
 
     public event EventHandler<Bitmap>? FrameReceived;
 
@@ -82,6 +83,8 @@ public sealed class CrSdkCameraPreviewSession : ICameraPreviewSession
                 return Task.CompletedTask;
             if (!_sdkConnected)
                 throw new InvalidOperationException("未连接相机，无法启动预览。");
+            if (!_liveViewEnabled)
+                return Task.CompletedTask;
 
             _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             var token = _cts.Token;
@@ -89,6 +92,49 @@ public sealed class CrSdkCameraPreviewSession : ICameraPreviewSession
         }
 
         return Task.CompletedTask;
+    }
+
+    public async Task SetLiveViewEnabledAsync(bool enabled, CancellationToken cancellationToken = default)
+    {
+        Task? loopToWait = null;
+        lock (_gate)
+        {
+            if (!_sdkConnected)
+                throw new InvalidOperationException("未连接相机，无法设置 LiveView。");
+            if (_liveViewEnabled == enabled && (!enabled || _loopTask != null))
+                return;
+            _liveViewEnabled = enabled;
+            if (!enabled)
+            {
+                loopToWait = _loopTask;
+                _loopTask = null;
+                _cts?.Cancel();
+                _cts?.Dispose();
+                _cts = null;
+            }
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!enabled)
+        {
+            if (loopToWait != null)
+            {
+                try
+                {
+                    await loopToWait.ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                }
+            }
+
+            // 关闭传感器取流，进入静默待机。
+            SonyCrSdk.SetDeviceSetting(CrSdkSettingKey.EnableLiveView, 0);
+            return;
+        }
+
+        SonyCrSdk.SetDeviceSetting(CrSdkSettingKey.EnableLiveView, 1);
+        await StartPreviewAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async Task DisconnectAsync()
@@ -119,6 +165,7 @@ public sealed class CrSdkCameraPreviewSession : ICameraPreviewSession
         {
             _sdkConnected = false;
             ConnectedCameraModel = null;
+            _liveViewEnabled = true;
         }
     }
 

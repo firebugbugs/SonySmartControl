@@ -16,6 +16,8 @@ public interface ICameraPreviewSession : IAsyncDisposable
     /// 开始推送预览帧（CrSDK：在连接且应用完遥控保存设置后再调用，避免与桥接全局锁上的 LiveView 争用导致卡死）。
     /// </summary>
     Task StartPreviewAsync(CancellationToken cancellationToken = default);
+    /// <summary>设置 LiveView 取流开关：关闭后 CMOS 停止取流，拍照控制链路保持可用。</summary>
+    Task SetLiveViewEnabledAsync(bool enabled, CancellationToken cancellationToken = default);
 
     Task DisconnectAsync();
 

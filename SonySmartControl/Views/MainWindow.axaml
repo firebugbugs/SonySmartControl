@@ -500,6 +500,19 @@
                                                                           IsChecked="{Binding CameraScreenPowerOn, Mode=TwoWay}"
                                                                           IsEnabled="{Binding CameraScreenPowerEnabled}"/>
                                                         </Grid>
+                                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                                            <TextBlock Grid.Column="0"
+                                                                       VerticalAlignment="Center"
+                                                                       TextWrapping="Wrap"
+                                                                       Text="LiveView 取流"
+                                                                       ToolTip.Tip="关闭后停止 CMOS 实时取流，进入低功耗静默待机；拍照控制仍可用。"/>
+                                                            <ToggleSwitch Grid.Column="1"
+                                                                          VerticalAlignment="Center"
+                                                                          OnContent="开"
+                                                                          OffContent="关"
+                                                                          IsChecked="{Binding LiveViewEnabled, Mode=TwoWay}"
+                                                                          IsEnabled="{Binding LiveViewEnabledControlEnabled}"/>
+                                                        </Grid>
                                                     </StackPanel>
                                                 </Expander>
 
