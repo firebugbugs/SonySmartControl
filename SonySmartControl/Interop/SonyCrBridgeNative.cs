@@ -94,6 +94,112 @@ internal static class SonyCrBridgeNative
         out ulong outSlot2UsedBytes,
         out int outSlot2HasCard);
 
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate int SonyCr_GetLastSdUsageDebugUtf8Delegate(
+        [Out] byte[] buffer,
+        int bufferSizeBytes,
+        out int outWritten);
+
+    private static readonly object SdUsageDebugLock = new();
+    private static SonyCr_GetLastSdUsageDebugUtf8Delegate? _getSdUsageDebug;
+    private static bool _getSdUsageDebugExportUnavailable;
+
+    internal static string? TryGetLastSdUsageDebugUtf8()
+    {
+        lock (SdUsageDebugLock)
+        {
+            if (_getSdUsageDebugExportUnavailable)
+                return null;
+            if (_getSdUsageDebug == null)
+            {
+                IntPtr h;
+                try
+                {
+                    h = NativeLibrary.Load(Dll);
+                }
+                catch (DllNotFoundException)
+                {
+                    _getSdUsageDebugExportUnavailable = true;
+                    return null;
+                }
+
+                if (!NativeLibrary.TryGetExport(h, "SonyCr_GetLastSdUsageDebugUtf8", out var addr))
+                {
+                    _getSdUsageDebugExportUnavailable = true;
+                    return null;
+                }
+
+                _getSdUsageDebug =
+                    Marshal.GetDelegateForFunctionPointer<SonyCr_GetLastSdUsageDebugUtf8Delegate>(addr);
+            }
+        }
+
+        for (var cap = 1024; cap <= 64 * 1024; cap *= 2)
+        {
+            var buf = new byte[cap];
+            var st = _getSdUsageDebug!(buf, buf.Length, out var written);
+            if (st == (int)SonyCrStatus.ErrBufferTooSmall)
+                continue;
+            if (st == (int)SonyCrStatus.Ok && written > 1)
+                return Encoding.UTF8.GetString(buf.AsSpan(0, written - 1));
+            return null;
+        }
+        return null;
+    }
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate int SonyCr_GetLastCapturePullDebugUtf8Delegate(
+        [Out] byte[] buffer,
+        int bufferSizeBytes,
+        out int outWritten);
+
+    private static readonly object CapturePullDebugLock = new();
+    private static SonyCr_GetLastCapturePullDebugUtf8Delegate? _getCapturePullDebug;
+    private static bool _getCapturePullDebugExportUnavailable;
+
+    internal static string? TryGetLastCapturePullDebugUtf8()
+    {
+        lock (CapturePullDebugLock)
+        {
+            if (_getCapturePullDebugExportUnavailable)
+                return null;
+            if (_getCapturePullDebug == null)
+            {
+                IntPtr h;
+                try
+                {
+                    h = NativeLibrary.Load(Dll);
+                }
+                catch (DllNotFoundException)
+                {
+                    _getCapturePullDebugExportUnavailable = true;
+                    return null;
+                }
+
+                if (!NativeLibrary.TryGetExport(h, "SonyCr_GetLastCapturePullDebugUtf8", out var addr))
+                {
+                    _getCapturePullDebugExportUnavailable = true;
+                    return null;
+                }
+
+                _getCapturePullDebug =
+                    Marshal.GetDelegateForFunctionPointer<SonyCr_GetLastCapturePullDebugUtf8Delegate>(addr);
+            }
+        }
+
+        for (var cap = 1024; cap <= 64 * 1024; cap *= 2)
+        {
+            var buf = new byte[cap];
+            var st = _getCapturePullDebug!(buf, buf.Length, out var written);
+            if (st == (int)SonyCrStatus.ErrBufferTooSmall)
+                continue;
+            if (st == (int)SonyCrStatus.Ok && written > 1)
+                return Encoding.UTF8.GetString(buf.AsSpan(0, written - 1));
+            return null;
+        }
+        return null;
+    }
+
     /// <summary>
     /// 不使用 DllImport 直接绑定：旧版 SonyCrBridge.dll 可能未导出 <c>SonyCr_SetSaveInfoUtf16</c>，
     /// 若用 DllImport 会在首次调用时抛 <see cref="EntryPointNotFoundException"/>。

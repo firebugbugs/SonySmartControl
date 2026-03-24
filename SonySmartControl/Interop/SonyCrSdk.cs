@@ -13,6 +13,9 @@ namespace SonySmartControl.Interop;
 /// </summary>
 public static class SonyCrSdk
 {
+    private static readonly object CaptureTransferDebugLock = new();
+    private static string _lastCaptureTransferSetupDebug = "capture-setup: not-run";
+
     public static void ExecuteControlCodeValue(uint code, ulong value) =>
         ThrowIfFailed(SonyCrBridgeNative.SonyCr_ExecuteControlCodeValue(code, value), nameof(ExecuteControlCodeValue));
 
@@ -242,23 +245,64 @@ public static class SonyCrSdk
     }
 
     /// <summary>
-    /// 仅当 <c>SetSaveInfo</c> 未成功时从卡拉取兜底。成功时 SDK 已按路径直传 PC，再 Pull 易与机身状态冲突（ErrControlFailed -8），
-    /// 且会拖长拍照任务、对焦/拍照按钮长时间不可用；图已在胶片条时切勿再 Pull。
+    /// 从卡拉取兜底：
+    /// 1) SetSaveInfo 失败时必拉；
+    /// 2) HEIF/RAW+HEIF 机型上即使 SetSaveInfo 成功，直传仍可能只有小图（如 160x120），因此强制再拉一次原图。
     /// </summary>
     private static void TryPullLatestStillIfSaveInfoFailed(bool setSavePathOk, string saveDirectory, CrSdkFileType stillFileType)
     {
-        if (setSavePathOk)
+        var shouldForcePullForHeif =
+            stillFileType == CrSdkFileType.Heif || stillFileType == CrSdkFileType.RawHeif;
+
+        if (setSavePathOk && !shouldForcePullForHeif)
             return;
 
         var dir = NormalizeSaveDirectory(saveDirectory);
-        var pullCount = stillFileType == CrSdkFileType.RawJpeg ? 2 : 1;
+        var pullCount = (stillFileType == CrSdkFileType.RawJpeg || stillFileType == CrSdkFileType.RawHeif) ? 2 : 1;
+        var pausedLiveView = false;
+        if (shouldForcePullForHeif)
+        {
+            // 文档中的 contents transfer 在机身忙时容易返回 busy；实测与 LiveView 并发时更明显。
+            // 这里在强制拉 HEIF 原图前短暂关闭 LiveView，拉取后再恢复，减少 ErrControlFailed(-8)。
+            try
+            {
+                SetDeviceSetting(CrSdkSettingKey.EnableLiveView, 0);
+                pausedLiveView = true;
+                Thread.Sleep(120);
+            }
+            catch
+            {
+                pausedLiveView = false;
+            }
+        }
 
-        if (TryPullStillsToFolderWithDllFallback(dir, pullCount))
-            return;
+        try
+        {
+            // HEIF 机型上强制拉原图属于“增强”路径：机身忙时常见 ErrControlFailed(-8)，
+            // 此处改为重试且不阻断拍照主流程；SetSaveInfo 失败场景仍保持强约束（必须拉到）。
+            if (TryPullStillsWithRetryBestEffort(dir, pullCount))
+                return;
 
-        throw new InvalidOperationException(
-            "从存储卡拉取照片失败。请确认已重新编译并部署 native\\SonyCrBridge 生成的 SonyCrBridge.dll（含 SonyCr_PullLatestStillsToFolderUtf16），"
-            + "且相机内格式与存储卡就绪。若仍失败，可暂选「仅 JPEG」试拍。");
+            if (setSavePathOk && shouldForcePullForHeif)
+                return;
+
+            throw new InvalidOperationException(
+                "从存储卡拉取照片失败。请确认已重新编译并部署 native\\SonyCrBridge 生成的 SonyCrBridge.dll（含 SonyCr_PullLatestStillsToFolderUtf16），"
+                + "且相机内格式与存储卡就绪。若仍失败，可暂选「仅 JPEG」试拍。");
+        }
+        finally
+        {
+            if (pausedLiveView)
+            {
+                try
+                {
+                    SetDeviceSetting(CrSdkSettingKey.EnableLiveView, 1);
+                }
+                catch
+                {
+                }
+            }
+        }
     }
 
     /// <summary>
@@ -278,6 +322,31 @@ public static class SonyCrSdk
         }
     }
 
+    /// <summary>
+    /// HEIF 强制拉图仅做“短等待 + 单次尝试”，避免拍照后长时间卡住。
+    /// </summary>
+    private static bool TryPullStillsWithRetryBestEffort(string dir, int pullCount)
+    {
+        Exception? last = null;
+        Thread.Sleep(280);
+        try
+        {
+            if (TryPullStillsToFolderWithDllFallback(dir, pullCount))
+                return true;
+        }
+        catch (Exception ex)
+        {
+            last = ex;
+        }
+
+        if (last != null)
+        {
+            lock (CaptureTransferDebugLock)
+                _lastCaptureTransferSetupDebug += $" pullRetryFail={last.Message}";
+        }
+        return false;
+    }
+
     /// <summary>遥控拍摄：保存目标（须为 PC）、路径、前缀；可选写入 <see cref="CrSdkDevicePropertyCodes.FileType"/>。</summary>
     /// <param name="setFileTypeProperty">
     /// 为 false 时跳过 FileType：半按保持 S1 Locked 时机身常拒写 FileType，会报 ErrControlFailed(-8)。
@@ -290,12 +359,61 @@ public static class SonyCrSdk
         CrSdkFileType fileType,
         bool setFileTypeProperty = true)
     {
-        var ok = EnsureRemoteStillImageTransferToPc(saveDirectory, filePrefix);
+        var requireCardCopyForPull = fileType is CrSdkFileType.Heif or CrSdkFileType.RawHeif;
+        var ok = EnsureRemoteStillImageTransferToPc(saveDirectory, filePrefix, requireCardCopyForPull);
+        var transSizeOriginalOk = TryApplyStillImageTransferSizeOriginal();
         if (setFileTypeProperty)
-            SetDevicePropertyU64(CrSdkDevicePropertyCodes.FileType, (ulong)fileType, CrSdkDataType.UInt16);
+        {
+            if (!TrySetDevicePropertyWithDataType(CrSdkDevicePropertyCodes.FileType, (ulong)fileType, CrSdkDataType.UInt16))
+                SetDevicePropertyU64(CrSdkDevicePropertyCodes.FileType, (ulong)fileType, CrSdkDataType.UInt16Array);
+        }
+        TryApplyStillCompressionFileFormat(fileType);
         // 与官方「RAW+J PC Save Image」一致：双格式时须指定传到 PC 的内容，否则常见为仅 JPEG。
         TryApplyRawJpcPcSaveImageForFileType(fileType);
+        lock (CaptureTransferDebugLock)
+        {
+            _lastCaptureTransferSetupDebug =
+                $"capture-setup setSaveInfo={(ok ? 1 : 0)} transSizeOriginal={(transSizeOriginalOk ? 1 : 0)} fileType={(int)fileType}";
+        }
         return ok;
+    }
+
+    /// <summary>
+    /// 强制仍图传输尺寸为 Original，避免机身沿用 SmallSize 导致 PC 端落地 160x120 等小图。
+    /// CrPropertyStillImageTransSize: 0=Original, 1=SmallSize。
+    /// </summary>
+    private static bool TryApplyStillImageTransferSizeOriginal()
+    {
+        return TrySetDevicePropertyWithDataType(
+                   CrSdkDevicePropertyCodes.StillImageTransSize,
+                   0,
+                   CrSdkDataType.UInt16Array)
+               || TrySetDevicePropertyWithDataType(
+                   CrSdkDevicePropertyCodes.StillImageTransSize,
+                   0,
+                   CrSdkDataType.UInt16);
+    }
+
+    /// <summary>
+    /// 同步静态图像压缩编码（JPEG/HEIF）。部分机型仅改 FileType 不会切换机身的 Still 编码。
+    /// CrCompressionFileFormat: JPEG=0x01, HEIF_422=0x02, HEIF_420=0x03。
+    /// </summary>
+    private static void TryApplyStillCompressionFileFormat(CrSdkFileType fileType)
+    {
+        byte codec = fileType switch
+        {
+            CrSdkFileType.Heif or CrSdkFileType.RawHeif => 0x02,
+            CrSdkFileType.Jpeg or CrSdkFileType.RawJpeg => 0x01,
+            _ => 0x00,
+        };
+        if (codec == 0)
+            return;
+
+        // 不抛异常：部分机型可能固定编码或不暴露该属性。
+        _ = TrySetDevicePropertyWithDataType(
+            CrSdkDevicePropertyCodes.CompressionFileFormatStill,
+            codec,
+            CrSdkDataType.UInt8Array);
     }
 
     /// <summary>
@@ -343,7 +461,7 @@ public static class SonyCrSdk
     /// 并建议将 PriorityKeySettings 设为 PCRemote。此处优先 PC+卡（兼容性通常更好），失败再仅 HostPC。
     /// </summary>
     /// <returns>是否成功调用 <c>SetSaveInfo</c>（旧 DLL 无导出时为 false，拍照后会尝试从卡 Pull）。</returns>
-    private static bool EnsureRemoteStillImageTransferToPc(string saveDirectory, string filePrefix)
+    private static bool EnsureRemoteStillImageTransferToPc(string saveDirectory, string filePrefix, bool requireCardCopyForPull)
     {
         var dir = NormalizeSaveDirectory(saveDirectory);
         Directory.CreateDirectory(dir);
@@ -352,16 +470,34 @@ public static class SonyCrSdk
             CrSdkDevicePropertyCodes.PriorityKeySettings,
             (ushort)CrSdkPriorityKeySettings.PCRemote);
 
-        if (!TrySetDevicePropertyUInt16(
-                CrSdkDevicePropertyCodes.StillImageStoreDestination,
-                (ushort)CrSdkStillImageStoreDestination.HostPCAndMemoryCard) &&
-            !TrySetDevicePropertyUInt16(
-                CrSdkDevicePropertyCodes.StillImageStoreDestination,
-                (ushort)CrSdkStillImageStoreDestination.HostPC))
+        if (requireCardCopyForPull)
         {
-            throw new InvalidOperationException(
-                "无法将「静态影像保存目标」设为电脑（HostPC 或 PC+存储卡）。"
-                + " 请在相机菜单中确认「遥控拍摄」下允许保存到电脑，或解除相关锁定后再试。");
+            // 官方 contents transfer 流程依赖内容实际写入媒体；HEIF 机型直传常给小图，因此优先要求“写卡”。
+            if (!TrySetDevicePropertyUInt16(
+                    CrSdkDevicePropertyCodes.StillImageStoreDestination,
+                    (ushort)CrSdkStillImageStoreDestination.HostPCAndMemoryCard) &&
+                !TrySetDevicePropertyUInt16(
+                    CrSdkDevicePropertyCodes.StillImageStoreDestination,
+                    (ushort)CrSdkStillImageStoreDestination.MemoryCard))
+            {
+                throw new InvalidOperationException(
+                    "HEIF 原图拉取需要机身写入存储卡，但当前无法设置保存目标为“PC+存储卡”或“仅存储卡”。"
+                    + " 请在机身菜单中开启允许写卡/遥控拍摄后重试。");
+            }
+        }
+        else
+        {
+            if (!TrySetDevicePropertyUInt16(
+                    CrSdkDevicePropertyCodes.StillImageStoreDestination,
+                    (ushort)CrSdkStillImageStoreDestination.HostPCAndMemoryCard) &&
+                !TrySetDevicePropertyUInt16(
+                    CrSdkDevicePropertyCodes.StillImageStoreDestination,
+                    (ushort)CrSdkStillImageStoreDestination.HostPC))
+            {
+                throw new InvalidOperationException(
+                    "无法将「静态影像保存目标」设为电脑（HostPC 或 PC+存储卡）。"
+                    + " 请在相机菜单中确认「遥控拍摄」下允许保存到电脑，或解除相关锁定后再试。");
+            }
         }
 
         // 旧版 SonyCrBridge.dll 可能未导出 SonyCr_SetSaveInfoUtf16：用动态绑定，缺失时跳过（拍照后改从卡 Pull）。
@@ -426,6 +562,17 @@ public static class SonyCrSdk
     /// </summary>
     public static SonyCrStatus? TryDeleteRemoteContentMatchingFileName(string fileNameOnly) =>
         SonyCrBridgeNative.TryDeleteRemoteContentMatchingFileName(fileNameOnly);
+
+    /// <summary>最近一次“拍照后拉取文件”桥接诊断文本（用于定位 HEIF 仅小图问题）。</summary>
+    public static string? TryGetLastCapturePullDebugText() =>
+        SonyCrBridgeNative.TryGetLastCapturePullDebugUtf8();
+
+    /// <summary>最近一次拍照前“传输设置”诊断文本（SetSaveInfo/TransSize/FileType）。</summary>
+    public static string GetLastCaptureTransferSetupDebugText()
+    {
+        lock (CaptureTransferDebugLock)
+            return _lastCaptureTransferSetupDebug;
+    }
 
     private static void ThrowIfFailed(int st, string operation)
     {

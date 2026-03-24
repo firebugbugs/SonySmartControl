@@ -14,6 +14,21 @@ public static class DiskImagePreviewLoader
     public const double UiDisplayScale = 0.1;
 
     private static readonly SemaphoreSlim DecodeConcurrency = new(3);
+    private static readonly string[] HeifLikeExtensions = [".hif", ".heif", ".heic"];
+
+    private static bool IsHeifLike(string path)
+    {
+        var ext = Path.GetExtension(path);
+        if (string.IsNullOrWhiteSpace(ext))
+            return false;
+        ext = ext.ToLowerInvariant();
+        foreach (var e in HeifLikeExtensions)
+        {
+            if (ext == e)
+                return true;
+        }
+        return false;
+    }
 
     public static Bitmap? LoadScaled(string path, double scale = UiDisplayScale)
     {
@@ -30,7 +45,17 @@ public static class DiskImagePreviewLoader
         }
         catch
         {
-            full = EmbeddedJpegPreviewLoader.TryDecodeLargestEmbeddedJpeg(path);
+            // HEIF 先走系统解码，避免误用文件内极小 JPEG 预览（常见 160x120）。
+            if (IsHeifLike(path))
+            {
+                full = WindowsShellImageDecoder.TryDecode(path, 1024);
+                full ??= EmbeddedJpegPreviewLoader.TryDecodeLargestEmbeddedJpeg(path);
+            }
+            else
+            {
+                full = EmbeddedJpegPreviewLoader.TryDecodeLargestEmbeddedJpeg(path);
+                full ??= WindowsShellImageDecoder.TryDecode(path, 1024);
+            }
             if (full == null)
                 return null;
         }
@@ -82,7 +107,17 @@ public static class DiskImagePreviewLoader
         }
         catch
         {
-            decoded = EmbeddedJpegPreviewLoader.TryDecodeLargestEmbeddedJpeg(path);
+            // 全图优先系统解码，HEIF 场景不优先内嵌 JPEG 预览。
+            if (IsHeifLike(path))
+            {
+                decoded = WindowsShellImageDecoder.TryDecode(path, 2048);
+                decoded ??= EmbeddedJpegPreviewLoader.TryDecodeLargestEmbeddedJpeg(path);
+            }
+            else
+            {
+                decoded = EmbeddedJpegPreviewLoader.TryDecodeLargestEmbeddedJpeg(path);
+                decoded ??= WindowsShellImageDecoder.TryDecode(path, 2048);
+            }
             if (decoded == null)
                 return null;
         }

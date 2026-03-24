@@ -154,6 +154,12 @@ SONY_CR_API SonyCrStatus SonyCr_GetSdCardUsageEstimate(
     unsigned long long* outSlot2UsedBytes,
     int* outSlot2HasCard);
 
+/** 获取最近一次 SD 使用量估算的诊断文本（UTF-8，含结尾\0）。 */
+SONY_CR_API SonyCrStatus SonyCr_GetLastSdUsageDebugUtf8(char* buffer, int bufferSizeBytes, int* outWritten);
+
+/** 获取最近一次“拍照后拉取文件”诊断文本（UTF-8，含结尾\0）。 */
+SONY_CR_API SonyCrStatus SonyCr_GetLastCapturePullDebugUtf8(char* buffer, int bufferSizeBytes, int* outWritten);
+
 /**
  * 对应 SCRSDK::SetSaveInfo（遥控拍摄保存到 PC 的路径/前缀）。
  * Windows 下 path/prefix 为 UTF-16（wchar_t）；saveNumber 为 CrSETSAVEINFO_AUTO_NUMBER(-1) 表示自动编号。

@@ -7,7 +7,7 @@ public sealed class CameraUserSettings
     public string SaveDirectory { get; set; } =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "SonySmartControl");
 
-    /// <summary>0=仅 JPEG，1=仅 RAW，2=RAW+JPEG（与机身 CrFileType 对应）。</summary>
+    /// <summary>0=JPEG，1=RAW，2=RAW+JPEG，3=HEIF，4=RAW+HEIF（与机身 CrFileType 对应）。</summary>
     public int CaptureFormatIndex { get; set; }
 
     /// <summary>文件名前缀（可为空）。</summary>

@@ -236,7 +236,8 @@ public sealed class CrSdkCameraPreviewSession : ICameraPreviewSession
                         out slot2HasCardInt);
 
                     if (st != (int)SonyCrStatus.Ok)
-                        return null;
+                        throw new InvalidOperationException(
+                            $"SonyCr_GetSdCardUsageEstimate 失败: {(SonyCrStatus)st} ({st})");
 
                     return new SdCardUsageEstimate(
                         slot1HasCardInt != 0,
@@ -256,6 +257,17 @@ public sealed class CrSdkCameraPreviewSession : ICameraPreviewSession
                 }
             },
             cancellationToken);
+    }
+
+    public string? TryGetSdCardUsageDebugText()
+    {
+        lock (_gate)
+        {
+            if (!_sdkConnected)
+                return null;
+        }
+
+        return SonyCrBridgeNative.TryGetLastSdUsageDebugUtf8();
     }
 
     private static void DrainPendingLiveViewFrames()

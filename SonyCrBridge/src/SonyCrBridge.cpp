@@ -50,6 +50,7 @@ std::mutex g_remoteTransferWaitMutex;
 std::promise<void>* g_remoteTransferPromise = nullptr;
 static void AddDownloadBytes(unsigned long long v);
 static unsigned long long TryGetLocalFileSizeBytes(const CrChar* filename);
+static void TrySetRemoteTouchSpotAf(CrDeviceHandle h);
 
 class BridgeDeviceCallback final : public IDeviceCallback
 {
@@ -120,6 +121,10 @@ CrInt32u g_cachedBufSize = 0;
 
 std::mutex g_focusFramesJsonMutex;
 std::string g_lastFocusFramesJson = "[]";
+std::mutex g_sdUsageDebugMutex;
+std::string g_lastSdUsageDebug = "sd-usage: not-run";
+std::mutex g_capturePullDebugMutex;
+std::string g_lastCapturePullDebug = "capture-pull: not-run";
 std::atomic_ullong g_transportUploadBytes{0};
 std::atomic_ullong g_transportDownloadBytes{0};
 
@@ -155,6 +160,49 @@ static unsigned long long TryGetLocalFileSizeBytes(const CrChar* filename)
     if (ec)
         return 0;
     return static_cast<unsigned long long>(sz);
+}
+
+static std::string TryGetLatestFileSummaryInFolder(const CrChar* folderPath)
+{
+    if (!folderPath || folderPath[0] == 0)
+        return "latest=none";
+    std::error_code ec;
+#if defined(_WIN32)
+    const std::filesystem::path dir(reinterpret_cast<const wchar_t*>(folderPath));
+#else
+    const std::filesystem::path dir(reinterpret_cast<const char*>(folderPath));
+#endif
+    if (!std::filesystem::exists(dir, ec) || ec)
+        return "latest=none";
+
+    std::filesystem::path bestPath;
+    std::filesystem::file_time_type bestTime{};
+    bool found = false;
+    for (const auto& it : std::filesystem::directory_iterator(dir, ec))
+    {
+        if (ec)
+            break;
+        if (!it.is_regular_file(ec) || ec)
+            continue;
+        const auto t = it.last_write_time(ec);
+        if (ec)
+            continue;
+        if (!found || t > bestTime)
+        {
+            bestTime = t;
+            bestPath = it.path();
+            found = true;
+        }
+    }
+
+    if (!found)
+        return "latest=none";
+
+    const auto size = std::filesystem::file_size(bestPath, ec);
+    const auto sz = ec ? 0ull : static_cast<unsigned long long>(size);
+    std::string out = "latest=" + bestPath.filename().string();
+    out += " size=" + std::to_string(sz);
+    return out;
 }
 
 static void UpdateFocusFramesJsonFromLiveViewProps(CrLiveViewProperty* props, CrInt32 num)
@@ -242,10 +290,17 @@ static std::string CrModelToUtf8(const ICrCameraObjectInfo* info)
         return {};
 #if defined(_WIN32) && (defined(UNICODE) || defined(_UNICODE))
     const auto* w = reinterpret_cast<const wchar_t*>(info->GetModel());
-    const CrInt32u nChars = info->GetModelSize();
-    if (!w || nChars == 0)
+    const CrInt32u rawSize = info->GetModelSize();
+    if (!w || rawSize == 0)
         return {};
-    const int cch = static_cast<int>(nChars);
+    const int rawCount = static_cast<int>(rawSize / sizeof(wchar_t));
+    if (rawCount <= 0)
+        return {};
+    int cch = 0;
+    while (cch < rawCount && w[cch] != L'\0')
+        ++cch;
+    if (cch <= 0)
+        return {};
     const int need = WideCharToMultiByte(CP_UTF8, 0, w, cch, nullptr, 0, nullptr, nullptr);
     if (need <= 0)
         return {};
@@ -258,6 +313,39 @@ static std::string CrModelToUtf8(const ICrCameraObjectInfo* info)
     if (!s || n == 0)
         return {};
     return std::string(s, static_cast<size_t>(n));
+#endif
+}
+
+static std::string CrUtf16ToUtf8(const CrInt16u* p)
+{
+    if (!p)
+        return {};
+#if defined(_WIN32)
+    // CrDataType_STR 在 CrDeviceProperty::GetCurrentStr 中是“长度前缀 + UTF-16 字符串”。
+    const int length = static_cast<int>(p[0]);
+    if (length <= 1)
+        return {};
+    const wchar_t* w = reinterpret_cast<const wchar_t*>(p + 1);
+    int cch = length - 1;
+    if (cch > 0 && w[cch - 1] == L'\0')
+        --cch;
+    if (cch <= 0)
+        return {};
+    const int need = WideCharToMultiByte(CP_UTF8, 0, w, cch, nullptr, 0, nullptr, nullptr);
+    if (need <= 0)
+        return {};
+    std::string out(static_cast<size_t>(need), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, w, cch, out.data(), need, nullptr, nullptr);
+    return out;
+#else
+    // 非 Windows 下尽量保留 ASCII，可读性优先（当前项目主要在 Windows）。
+    std::string out;
+    for (int i = 0; i < 512 && p[i] != 0; ++i)
+    {
+        const CrInt16u ch = p[i];
+        out.push_back(ch <= 0x7F ? static_cast<char>(ch) : '?');
+    }
+    return out;
 #endif
 }
 
@@ -305,6 +393,36 @@ static bool WaitForConnected(int timeoutMs)
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
     return g_callback.connected.load();
+}
+
+static bool ReconnectByIndexWithModeUnlocked(int index, CrSdkControlMode mode, bool enableLiveViewAfterConnect)
+{
+    if (!g_inited || !g_enumList)
+        return false;
+    const auto* infoConst = GetInfoOrNull(index);
+    if (!infoConst)
+        return false;
+
+    DisconnectDeviceUnlocked();
+    auto* info = const_cast<ICrCameraObjectInfo*>(infoConst);
+    const CrError err = Connect(info, &g_callback, &g_deviceHandle, mode);
+    if (CR_FAILED(err))
+        return false;
+    if (!WaitForConnected(15000))
+    {
+        DisconnectDeviceUnlocked();
+        return false;
+    }
+
+    if (enableLiveViewAfterConnect)
+    {
+        const CrError lvErr = SetDeviceSetting(g_deviceHandle, Setting_Key_EnableLiveView, 1);
+        (void)lvErr;
+        TrySetRemoteTouchSpotAf(g_deviceHandle);
+    }
+
+    ResetTransportStats();
+    return true;
 }
 
 /** 将「遥控触摸」设为点对焦（Spot AF），与 ExecuteControlCode RemoteTouch 配合；失败则忽略。 */
@@ -426,10 +544,54 @@ static void AppendProp(
     out.push_back('}');
 }
 
+static void AppendJsonEscapedString(std::string& out, const std::string& s)
+{
+    out.push_back('"');
+    for (const char ch : s)
+    {
+        switch (ch)
+        {
+        case '\\': out += "\\\\"; break;
+        case '\"': out += "\\\""; break;
+        case '\n': out += "\\n"; break;
+        case '\r': out += "\\r"; break;
+        case '\t': out += "\\t"; break;
+        default:
+            out.push_back(ch);
+            break;
+        }
+    }
+    out.push_back('"');
+}
+
+static void AppendStringField(std::string& out, const char* key, const std::string& value)
+{
+    out.push_back('"');
+    out += key;
+    out += "\":";
+    if (value.empty())
+        out += "null";
+    else
+        AppendJsonEscapedString(out, value);
+}
+
+static void AppendIntField(std::string& out, const char* key, int value, bool hasValue)
+{
+    out.push_back('"');
+    out += key;
+    out += "\":";
+    if (!hasValue)
+    {
+        out += "null";
+        return;
+    }
+    out += std::to_string(value);
+}
+
 static void BuildShootingStateJson(std::string& out)
 {
-    // 批量 8 项；其余单独查，避免部分固件对大批量查询失败。
-    CrInt32u codes[8] = {
+    // 批量 13 项；其余单独查，避免部分固件对大批量查询失败。
+    CrInt32u codes[13] = {
         CrDevicePropertyCode::CrDeviceProperty_ExposureProgramMode,
         CrDevicePropertyCode::CrDeviceProperty_FNumber,
         CrDevicePropertyCode::CrDeviceProperty_ShutterSpeed,
@@ -438,16 +600,21 @@ static void BuildShootingStateJson(std::string& out)
         CrDevicePropertyCode::CrDeviceProperty_FocusMode,
         CrDevicePropertyCode::CrDeviceProperty_RemoteTouchOperationEnableStatus,
         CrDevicePropertyCode::CrDeviceProperty_DispModeStill,
+        CrDevicePropertyCode::CrDeviceProperty_StillImageQuality,
+        CrDevicePropertyCode::CrDeviceProperty_MediaSLOT1_ImageQuality,
+        CrDevicePropertyCode::CrDeviceProperty_ImageSize,
+        CrDevicePropertyCode::CrDeviceProperty_AspectRatio,
+        CrDevicePropertyCode::CrDeviceProperty_RAW_FileCompressionType,
     };
 
     CrDeviceProperty* propList = nullptr;
     CrInt32 nprop = 0;
-    const CrError err = GetSelectDeviceProperties(g_deviceHandle, 8, codes, &propList, &nprop);
+    const CrError err = GetSelectDeviceProperties(g_deviceHandle, 13, codes, &propList, &nprop);
     if (CR_FAILED(err) || propList == nullptr || nprop < 1)
     {
         if (propList != nullptr)
             ReleaseDeviceProperties(g_deviceHandle, propList);
-        out = "{\"video\":false,\"ep\":null,\"fn\":null,\"ss\":null,\"iso\":null,\"ev\":null,\"fm\":null,\"rtouch\":null,\"dm\":null,\"st\":null,\"drv\":null,\"flm\":null,\"flc\":null}";
+        out = "{\"video\":false,\"ep\":null,\"fn\":null,\"ss\":null,\"iso\":null,\"ev\":null,\"fm\":null,\"rtouch\":null,\"dm\":null,\"iq\":null,\"isz\":null,\"ar\":null,\"rawc\":null,\"st\":null,\"drv\":null,\"flm\":null,\"flc\":null}";
         return;
     }
 
@@ -459,6 +626,11 @@ static void BuildShootingStateJson(std::string& out)
     const CrDeviceProperty* fm = nullptr;
     const CrDeviceProperty* rtouch = nullptr;
     const CrDeviceProperty* dm = nullptr;
+    const CrDeviceProperty* iqStill = nullptr;
+    const CrDeviceProperty* iqSlot1 = nullptr;
+    const CrDeviceProperty* isz = nullptr;
+    const CrDeviceProperty* ar = nullptr;
+    const CrDeviceProperty* rawc = nullptr;
     CrDeviceProperty* rtouchOnly = nullptr;
     CrInt32 nRtouchOnly = 0;
     CrDeviceProperty* dmStillOnly = nullptr;
@@ -485,6 +657,16 @@ static void BuildShootingStateJson(std::string& out)
             rtouch = &propList[i];
         else if (c == CrDevicePropertyCode::CrDeviceProperty_DispModeStill)
             dm = &propList[i];
+        else if (c == CrDevicePropertyCode::CrDeviceProperty_StillImageQuality)
+            iqStill = &propList[i];
+        else if (c == CrDevicePropertyCode::CrDeviceProperty_MediaSLOT1_ImageQuality)
+            iqSlot1 = &propList[i];
+        else if (c == CrDevicePropertyCode::CrDeviceProperty_ImageSize)
+            isz = &propList[i];
+        else if (c == CrDevicePropertyCode::CrDeviceProperty_AspectRatio)
+            ar = &propList[i];
+        else if (c == CrDevicePropertyCode::CrDeviceProperty_RAW_FileCompressionType)
+            rawc = &propList[i];
     }
 
     // 部分机型批量 GetSelectDeviceProperties 不返回遥控触摸项：再单独查询一次。
@@ -552,6 +734,159 @@ static void BuildShootingStateJson(std::string& out)
             flc = &flcOnly[0];
     }
 
+    const CrDeviceProperty* lensModel = nullptr;
+    CrDeviceProperty* lensModelOnly = nullptr;
+    CrInt32 nLensModelOnly = 0;
+    {
+        CrInt32u codeLensModel = CrDevicePropertyCode::CrDeviceProperty_LensModelName;
+        const CrError errLensModel =
+            GetSelectDeviceProperties(g_deviceHandle, 1, &codeLensModel, &lensModelOnly, &nLensModelOnly);
+        if (!CR_FAILED(errLensModel) && lensModelOnly != nullptr && nLensModelOnly >= 1)
+            lensModel = &lensModelOnly[0];
+    }
+
+    CrDeviceProperty* batteryRemainOnly = nullptr;
+    CrInt32 nBatteryRemainOnly = 0;
+    CrDeviceProperty* totalBatteryRemainOnly = nullptr;
+    CrInt32 nTotalBatteryRemainOnly = 0;
+    CrDeviceProperty* batteryLevelOnly = nullptr;
+    CrInt32 nBatteryLevelOnly = 0;
+    CrDeviceProperty* totalBatteryLevelOnly = nullptr;
+    CrInt32 nTotalBatteryLevelOnly = 0;
+    CrDeviceProperty* batteryUnitOnly = nullptr;
+    CrInt32 nBatteryUnitOnly = 0;
+
+    const CrDeviceProperty* batteryRemain = nullptr;
+    const CrDeviceProperty* totalBatteryRemain = nullptr;
+    const CrDeviceProperty* batteryLevel = nullptr;
+    const CrDeviceProperty* totalBatteryLevel = nullptr;
+    const CrDeviceProperty* batteryUnit = nullptr;
+
+    {
+        CrInt32u code = CrDevicePropertyCode::CrDeviceProperty_BatteryRemain;
+        const CrError e = GetSelectDeviceProperties(g_deviceHandle, 1, &code, &batteryRemainOnly, &nBatteryRemainOnly);
+        if (!CR_FAILED(e) && batteryRemainOnly != nullptr && nBatteryRemainOnly >= 1)
+            batteryRemain = &batteryRemainOnly[0];
+    }
+    {
+        CrInt32u code = CrDevicePropertyCode::CrDeviceProperty_TotalBatteryRemain;
+        const CrError e = GetSelectDeviceProperties(g_deviceHandle, 1, &code, &totalBatteryRemainOnly, &nTotalBatteryRemainOnly);
+        if (!CR_FAILED(e) && totalBatteryRemainOnly != nullptr && nTotalBatteryRemainOnly >= 1)
+            totalBatteryRemain = &totalBatteryRemainOnly[0];
+    }
+    {
+        CrInt32u code = CrDevicePropertyCode::CrDeviceProperty_BatteryLevel;
+        const CrError e = GetSelectDeviceProperties(g_deviceHandle, 1, &code, &batteryLevelOnly, &nBatteryLevelOnly);
+        if (!CR_FAILED(e) && batteryLevelOnly != nullptr && nBatteryLevelOnly >= 1)
+            batteryLevel = &batteryLevelOnly[0];
+    }
+    {
+        CrInt32u code = CrDevicePropertyCode::CrDeviceProperty_TotalBatteryLevel;
+        const CrError e = GetSelectDeviceProperties(g_deviceHandle, 1, &code, &totalBatteryLevelOnly, &nTotalBatteryLevelOnly);
+        if (!CR_FAILED(e) && totalBatteryLevelOnly != nullptr && nTotalBatteryLevelOnly >= 1)
+            totalBatteryLevel = &totalBatteryLevelOnly[0];
+    }
+    {
+        CrInt32u code = CrDevicePropertyCode::CrDeviceProperty_BatteryRemainDisplayUnit;
+        const CrError e = GetSelectDeviceProperties(g_deviceHandle, 1, &code, &batteryUnitOnly, &nBatteryUnitOnly);
+        if (!CR_FAILED(e) && batteryUnitOnly != nullptr && nBatteryUnitOnly >= 1)
+            batteryUnit = &batteryUnitOnly[0];
+    }
+
+    CrDeviceProperty* allProps = nullptr;
+    CrInt32 nAllProps = 0;
+    if (lensModel == nullptr || batteryRemain == nullptr || totalBatteryRemain == nullptr
+        || batteryLevel == nullptr || totalBatteryLevel == nullptr || batteryUnit == nullptr)
+    {
+        const CrError eAll = GetDeviceProperties(g_deviceHandle, &allProps, &nAllProps);
+        if (!CR_FAILED(eAll) && allProps != nullptr && nAllProps > 0)
+        {
+            for (CrInt32 i = 0; i < nAllProps; ++i)
+            {
+                const CrInt32u code = allProps[i].GetCode();
+                if (lensModel == nullptr && code == CrDevicePropertyCode::CrDeviceProperty_LensModelName)
+                    lensModel = &allProps[i];
+                else if (batteryRemain == nullptr && code == CrDevicePropertyCode::CrDeviceProperty_BatteryRemain)
+                    batteryRemain = &allProps[i];
+                else if (totalBatteryRemain == nullptr && code == CrDevicePropertyCode::CrDeviceProperty_TotalBatteryRemain)
+                    totalBatteryRemain = &allProps[i];
+                else if (batteryLevel == nullptr && code == CrDevicePropertyCode::CrDeviceProperty_BatteryLevel)
+                    batteryLevel = &allProps[i];
+                else if (totalBatteryLevel == nullptr && code == CrDevicePropertyCode::CrDeviceProperty_TotalBatteryLevel)
+                    totalBatteryLevel = &allProps[i];
+                else if (batteryUnit == nullptr && code == CrDevicePropertyCode::CrDeviceProperty_BatteryRemainDisplayUnit)
+                    batteryUnit = &allProps[i];
+            }
+        }
+    }
+
+    std::string lensModelName;
+    if (lensModel != nullptr && lensModel->GetCurrentStr() != nullptr)
+        lensModelName = CrUtf16ToUtf8(lensModel->GetCurrentStr());
+
+    bool hasBatteryPercent = false;
+    int batteryPercent = 0;
+    {
+        const CrInt64u remainRaw = (totalBatteryRemain != nullptr)
+            ? totalBatteryRemain->GetCurrentValue()
+            : (batteryRemain != nullptr ? batteryRemain->GetCurrentValue() : static_cast<CrInt64u>(CrBatteryRemain_Untaken));
+        const CrInt64u unitRaw = batteryUnit != nullptr ? batteryUnit->GetCurrentValue() : 0;
+        const int remainVal = static_cast<int>(remainRaw & 0xFFFFu);
+        if (remainVal >= 0 && remainVal <= 100
+            && unitRaw == static_cast<CrInt64u>(CrBatteryRemainDisplayUnit_percent))
+        {
+            hasBatteryPercent = true;
+            batteryPercent = remainVal;
+        }
+        else
+        {
+            const CrInt64u levelRaw = (totalBatteryLevel != nullptr)
+                ? totalBatteryLevel->GetCurrentValue()
+                : (batteryLevel != nullptr ? batteryLevel->GetCurrentValue() : static_cast<CrInt64u>(CrBatteryLevel_BatteryNotInstalled));
+            switch (static_cast<CrBatteryLevel>(levelRaw))
+            {
+            case CrBatteryLevel_PreEndBattery:
+            case CrBatteryLevel_PreEnd_PowerSupply:
+                hasBatteryPercent = true;
+                batteryPercent = 5;
+                break;
+            case CrBatteryLevel_1_4:
+            case CrBatteryLevel_1_4_PowerSupply:
+                hasBatteryPercent = true;
+                batteryPercent = 25;
+                break;
+            case CrBatteryLevel_2_4:
+            case CrBatteryLevel_2_4_PowerSupply:
+                hasBatteryPercent = true;
+                batteryPercent = 50;
+                break;
+            case CrBatteryLevel_3_4:
+            case CrBatteryLevel_3_4_PowerSupply:
+                hasBatteryPercent = true;
+                batteryPercent = 75;
+                break;
+            case CrBatteryLevel_4_4:
+                hasBatteryPercent = true;
+                batteryPercent = 100;
+                break;
+            case CrBatteryLevel_1_3:
+                hasBatteryPercent = true;
+                batteryPercent = 33;
+                break;
+            case CrBatteryLevel_2_3:
+                hasBatteryPercent = true;
+                batteryPercent = 66;
+                break;
+            case CrBatteryLevel_3_3:
+                hasBatteryPercent = true;
+                batteryPercent = 100;
+                break;
+            default:
+                break;
+            }
+        }
+    }
+
     bool video = false;
     if (ep != nullptr)
         video = IsMovieExposureProgram(static_cast<CrInt32u>(ep->GetCurrentValue()));
@@ -579,6 +914,15 @@ static void BuildShootingStateJson(std::string& out)
     out += ',';
     AppendProp(out, "dm", dm, sizeof(std::uint8_t), static_cast<CrInt32u>(CrDataType::CrDataType_UInt8Array));
     out += ',';
+    const CrDeviceProperty* iq = iqStill != nullptr ? iqStill : iqSlot1;
+    AppendProp(out, "iq", iq, sizeof(std::uint16_t), static_cast<CrInt32u>(CrDataType::CrDataType_UInt16Array));
+    out += ',';
+    AppendProp(out, "isz", isz, sizeof(std::uint16_t), static_cast<CrInt32u>(CrDataType::CrDataType_UInt16Array));
+    out += ',';
+    AppendProp(out, "ar", ar, sizeof(std::uint16_t), static_cast<CrInt32u>(CrDataType::CrDataType_UInt16Array));
+    out += ',';
+    AppendProp(out, "rawc", rawc, sizeof(std::uint16_t), static_cast<CrInt32u>(CrDataType::CrDataType_UInt16Array));
+    out += ',';
     AppendProp(out, "st", shtype, sizeof(std::uint8_t), static_cast<CrInt32u>(CrDataType::CrDataType_UInt8Array));
     out += ',';
     AppendProp(out, "drv", drv, sizeof(std::uint32_t), static_cast<CrInt32u>(CrDataType::CrDataType_UInt32Array));
@@ -586,6 +930,10 @@ static void BuildShootingStateJson(std::string& out)
     AppendProp(out, "flm", flm, sizeof(std::uint16_t), static_cast<CrInt32u>(CrDataType::CrDataType_UInt16Array));
     out += ',';
     AppendProp(out, "flc", flc, sizeof(std::uint16_t), static_cast<CrInt32u>(CrDataType::CrDataType_UInt16Array));
+    out += ',';
+    AppendStringField(out, "lensModelName", lensModelName);
+    out += ',';
+    AppendIntField(out, "batteryPercent", batteryPercent, hasBatteryPercent);
 
     out.push_back('}');
 
@@ -603,6 +951,20 @@ static void BuildShootingStateJson(std::string& out)
         ReleaseDeviceProperties(g_deviceHandle, flmOnly);
     if (flcOnly != nullptr)
         ReleaseDeviceProperties(g_deviceHandle, flcOnly);
+    if (lensModelOnly != nullptr)
+        ReleaseDeviceProperties(g_deviceHandle, lensModelOnly);
+    if (batteryRemainOnly != nullptr)
+        ReleaseDeviceProperties(g_deviceHandle, batteryRemainOnly);
+    if (totalBatteryRemainOnly != nullptr)
+        ReleaseDeviceProperties(g_deviceHandle, totalBatteryRemainOnly);
+    if (batteryLevelOnly != nullptr)
+        ReleaseDeviceProperties(g_deviceHandle, batteryLevelOnly);
+    if (totalBatteryLevelOnly != nullptr)
+        ReleaseDeviceProperties(g_deviceHandle, totalBatteryLevelOnly);
+    if (batteryUnitOnly != nullptr)
+        ReleaseDeviceProperties(g_deviceHandle, batteryUnitOnly);
+    if (allProps != nullptr)
+        ReleaseDeviceProperties(g_deviceHandle, allProps);
     ReleaseDeviceProperties(g_deviceHandle, propList);
 }
 } // namespace
@@ -1292,6 +1654,8 @@ SONY_CR_API SonyCrStatus SonyCr_GetSdCardUsageEstimate(
     *outSlot2TotalBytes = 0;
     *outSlot2UsedBytes = 0;
     *outSlot2HasCard = 0;
+    CrInt8u slot1ContentsListStatus = 0xFF;
+    CrInt8u slot2ContentsListStatus = 0xFF;
 
     auto safeMulU64 = [](unsigned long long a, unsigned long long b) -> unsigned long long
     {
@@ -1325,7 +1689,7 @@ SONY_CR_API SonyCrStatus SonyCr_GetSdCardUsageEstimate(
         CrError err = SCRSDK::CrError_None;
         {
             std::lock_guard lock(g_mutex);
-            if (g_deviceHandle == 0 || !g_callback.connected.load())
+            if (g_deviceHandle == 0)
                 return SONY_CR_ERR_NOT_CONNECTED;
 
             err = GetSelectDeviceProperties(g_deviceHandle, 4, codes, &propList, &nprop);
@@ -1343,9 +1707,8 @@ SONY_CR_API SonyCrStatus SonyCr_GetSdCardUsageEstimate(
                     {
                         if (p == nullptr || sz < 8u)
                             return;
-                        // UInt32Range 一般是 [min,max,step]，但不同固件在 values/getSetValues 上可能布局差异；
-                        // 这里尝试多个偏移，取“>= current 且尽量大”的候选。
-                        for (CrInt32u off = 0; off + 4u <= sz && off <= 8u; off += 4u)
+                        // 不同固件上 values/getSetValues 的布局可能不同，遍历整个缓冲按 UInt32 取候选最大值。
+                        for (CrInt32u off = 0; off + 4u <= sz; off += 4u)
                         {
                             CrInt32u v = 0;
                             std::memcpy(&v, p + off, sizeof(CrInt32u));
@@ -1363,7 +1726,7 @@ SONY_CR_API SonyCrStatus SonyCr_GetSdCardUsageEstimate(
                     {
                         if (p == nullptr || sz < 8u)
                             return;
-                        for (CrInt32u off = 0; off + 4u <= sz && off <= 8u; off += 4u)
+                        for (CrInt32u off = 0; off + 4u <= sz; off += 4u)
                         {
                             CrInt32u v = 0;
                             std::memcpy(&v, p + off, sizeof(CrInt32u));
@@ -1387,6 +1750,133 @@ SONY_CR_API SonyCrStatus SonyCr_GetSdCardUsageEstimate(
             if (g_deviceHandle != 0)
                 ReleaseDeviceProperties(g_deviceHandle, propList);
         }
+
+        // 部分机型在当前状态下 Select 可能拿不到槽位属性，回退全量属性扫描一次。
+        if ((remaining1 == 0 && remaining2 == 0)
+            && status1 == CrSlotStatus_NoCard && status2 == CrSlotStatus_NoCard)
+        {
+            CrDeviceProperty* allProps = nullptr;
+            CrInt32 nAll = 0;
+            CrError errAll = SCRSDK::CrError_None;
+            {
+                std::lock_guard lock(g_mutex);
+                if (g_deviceHandle == 0)
+                    return SONY_CR_ERR_NOT_CONNECTED;
+                errAll = GetDeviceProperties(g_deviceHandle, &allProps, &nAll);
+            }
+            if (!CR_FAILED(errAll) && allProps != nullptr && nAll > 0)
+            {
+                for (CrInt32 i = 0; i < nAll; ++i)
+                {
+                    const CrInt32u c = allProps[i].GetCode();
+                    if (c == static_cast<CrInt32u>(CrDevicePropertyCode::CrDeviceProperty_MediaSLOT1_RemainingNumber))
+                        remaining1 = static_cast<CrInt32u>(allProps[i].GetCurrentValue());
+                    else if (c == static_cast<CrInt32u>(CrDevicePropertyCode::CrDeviceProperty_MediaSLOT2_RemainingNumber))
+                        remaining2 = static_cast<CrInt32u>(allProps[i].GetCurrentValue());
+                    else if (c == static_cast<CrInt32u>(CrDevicePropertyCode::CrDeviceProperty_MediaSLOT1_Status))
+                        status1 = static_cast<CrSlotStatus>(allProps[i].GetCurrentValue());
+                    else if (c == static_cast<CrInt32u>(CrDevicePropertyCode::CrDeviceProperty_MediaSLOT2_Status))
+                        status2 = static_cast<CrSlotStatus>(allProps[i].GetCurrentValue());
+                }
+            }
+            if (allProps != nullptr)
+            {
+                std::lock_guard lock(g_mutex);
+                if (g_deviceHandle != 0)
+                    ReleaseDeviceProperties(g_deviceHandle, allProps);
+            }
+        }
+    }
+
+    // 官方文档中 ContentsInfoList 受 EnableStatus 影响；未开启时 RemoteTransfer/MTP 统计常为空。
+    // 这里尝试将 SLOT1/2 的 ContentsInfoList 置为 Enable（失败时忽略，后续仍走兜底估算）。
+    {
+        bool retriedAfterEnable = false;
+        CrInt32u codes[] = {
+            static_cast<CrInt32u>(CrDevicePropertyCode::CrDeviceProperty_MediaSLOT1_ContentsInfoListEnableStatus),
+            static_cast<CrInt32u>(CrDevicePropertyCode::CrDeviceProperty_MediaSLOT2_ContentsInfoListEnableStatus),
+        };
+        CrDeviceProperty* plist = nullptr;
+        CrInt32 n = 0;
+        CrError err = SCRSDK::CrError_None;
+        {
+            std::lock_guard lock(g_mutex);
+            if (g_deviceHandle != 0)
+                err = GetSelectDeviceProperties(g_deviceHandle, 2, codes, &plist, &n);
+        }
+
+        if (!CR_FAILED(err) && plist != nullptr && n > 0)
+        {
+            for (CrInt32 i = 0; i < n; ++i)
+            {
+                const auto code = plist[i].GetCode();
+                if (code != static_cast<CrInt32u>(CrDevicePropertyCode::CrDeviceProperty_MediaSLOT1_ContentsInfoListEnableStatus)
+                    && code != static_cast<CrInt32u>(CrDevicePropertyCode::CrDeviceProperty_MediaSLOT2_ContentsInfoListEnableStatus))
+                    continue;
+
+                const auto cur = static_cast<CrInt8u>(plist[i].GetCurrentValue() & 0xFFu);
+                if (code == static_cast<CrInt32u>(CrDevicePropertyCode::CrDeviceProperty_MediaSLOT1_ContentsInfoListEnableStatus))
+                    slot1ContentsListStatus = cur;
+                else if (code == static_cast<CrInt32u>(CrDevicePropertyCode::CrDeviceProperty_MediaSLOT2_ContentsInfoListEnableStatus))
+                    slot2ContentsListStatus = cur;
+                if (cur == CrContentsInfoListEnableStatus_Enable || !plist[i].IsSetEnableCurrentValue())
+                    continue;
+
+                CrDeviceProperty p;
+                p.SetCode(code);
+                p.SetCurrentValue(static_cast<CrInt64u>(CrContentsInfoListEnableStatus_Enable));
+                p.SetValueType(CrDataType::CrDataType_UInt8);
+                {
+                    std::lock_guard lock(g_mutex);
+                    if (g_deviceHandle != 0)
+                    {
+                        (void)SetPriorityKeyPcRemote(g_deviceHandle);
+                        const auto setErr = SetDeviceProperty(g_deviceHandle, &p);
+                        retriedAfterEnable = retriedAfterEnable || !CR_FAILED(setErr);
+                    }
+                }
+            }
+        }
+
+        if (plist != nullptr)
+        {
+            std::lock_guard lock(g_mutex);
+            if (g_deviceHandle != 0)
+                ReleaseDeviceProperties(g_deviceHandle, plist);
+        }
+
+        // 某些机型在开启 ContentsInfoList 后需要短暂等待，随后重新读取状态。
+        if (retriedAfterEnable)
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(150));
+            CrDeviceProperty* plist2 = nullptr;
+            CrInt32 n2 = 0;
+            CrError err2 = SCRSDK::CrError_None;
+            {
+                std::lock_guard lock(g_mutex);
+                if (g_deviceHandle != 0)
+                    err2 = GetSelectDeviceProperties(g_deviceHandle, 2, codes, &plist2, &n2);
+            }
+
+            if (!CR_FAILED(err2) && plist2 != nullptr && n2 > 0)
+            {
+                for (CrInt32 i = 0; i < n2; ++i)
+                {
+                    const auto code = plist2[i].GetCode();
+                    const auto cur = static_cast<CrInt8u>(plist2[i].GetCurrentValue() & 0xFFu);
+                    if (code == static_cast<CrInt32u>(CrDevicePropertyCode::CrDeviceProperty_MediaSLOT1_ContentsInfoListEnableStatus))
+                        slot1ContentsListStatus = cur;
+                    else if (code == static_cast<CrInt32u>(CrDevicePropertyCode::CrDeviceProperty_MediaSLOT2_ContentsInfoListEnableStatus))
+                        slot2ContentsListStatus = cur;
+                }
+            }
+            if (plist2 != nullptr)
+            {
+                std::lock_guard lock(g_mutex);
+                if (g_deviceHandle != 0)
+                    ReleaseDeviceProperties(g_deviceHandle, plist2);
+            }
+        }
     }
 
     // 统计 used：通过 RemoteTransfer 列表累计 contentId 数（shot）与文件真实字节数。
@@ -1405,7 +1895,7 @@ SONY_CR_API SonyCrStatus SonyCr_GetSdCardUsageEstimate(
         CrError err = SCRSDK::CrError_None;
         {
             std::lock_guard lock(g_mutex);
-            if (g_deviceHandle == 0 || !g_callback.connected.load())
+            if (g_deviceHandle == 0)
                 return false;
             err = GetRemoteTransferCapturedDateList(g_deviceHandle, slot, &dateList, &dateNums);
         }
@@ -1428,11 +1918,12 @@ SONY_CR_API SonyCrStatus SonyCr_GetSdCardUsageEstimate(
 
             {
                 std::lock_guard lock(g_mutex);
-                if (g_deviceHandle == 0 || !g_callback.connected.load())
+                if (g_deviceHandle == 0)
                 {
                     if (g_deviceHandle != 0 && dateList != nullptr)
                         ReleaseRemoteTransferCapturedDateList(g_deviceHandle, dateList);
-                    return false;
+                    // 会话短时重连时不要让整条容量读取失败，降级为“本槽统计不到 used”。
+                    return true;
                 }
                 err = GetRemoteTransferContentsInfoList(
                     g_deviceHandle,
@@ -1477,10 +1968,8 @@ SONY_CR_API SonyCrStatus SonyCr_GetSdCardUsageEstimate(
 
     SlotUsageStats slot1Stats;
     SlotUsageStats slot2Stats;
-    if (!countSlotUsage(CrSlotNumber_Slot1, slot1Stats))
-        return SONY_CR_ERR_NOT_CONNECTED;
-    if (!countSlotUsage(CrSlotNumber_Slot2, slot2Stats))
-        return SONY_CR_ERR_NOT_CONNECTED;
+    (void)countSlotUsage(CrSlotNumber_Slot1, slot1Stats);
+    (void)countSlotUsage(CrSlotNumber_Slot2, slot2Stats);
 
     // RemoteTransfer 列表在部分机型/设置下可能不是“全卡内容”。
     // 追加 MTP 全量内容统计作为兜底（只统计总已用字节，不分槽）。
@@ -1488,7 +1977,7 @@ SONY_CR_API SonyCrStatus SonyCr_GetSdCardUsageEstimate(
     unsigned long long mtpTotalContentCount = 0;
     {
         std::lock_guard lock(g_mutex);
-        if (g_deviceHandle != 0 && g_callback.connected.load())
+        if (g_deviceHandle != 0)
         {
             SCRSDK::CrMtpFolderInfo* folders = nullptr;
             CrInt32u folderNums = 0;
@@ -1609,6 +2098,76 @@ SONY_CR_API SonyCrStatus SonyCr_GetSdCardUsageEstimate(
     *outSlot2UsedBytes = has2 ? used2Bytes : 0;
     *outSlot2TotalBytes = has2 ? total2Bytes : 0;
 
+    {
+        std::string dbg;
+        dbg.reserve(512);
+        dbg += "slot1_status=" + std::to_string(static_cast<unsigned>(status1));
+        dbg += " slot2_status=" + std::to_string(static_cast<unsigned>(status2));
+        dbg += " slot1_remaining=" + std::to_string(remaining1);
+        dbg += " slot2_remaining=" + std::to_string(remaining2);
+        dbg += " slot1_max_remaining=" + std::to_string(maxRemaining1);
+        dbg += " slot2_max_remaining=" + std::to_string(maxRemaining2);
+        dbg += " slot1_contents_enable=" + std::to_string(static_cast<unsigned>(slot1ContentsListStatus));
+        dbg += " slot2_contents_enable=" + std::to_string(static_cast<unsigned>(slot2ContentsListStatus));
+        dbg += " slot1_used_shots=" + std::to_string(slot1Stats.usedShots);
+        dbg += " slot2_used_shots=" + std::to_string(slot2Stats.usedShots);
+        dbg += " slot1_used_bytes=" + std::to_string(slot1Stats.usedBytes);
+        dbg += " slot2_used_bytes=" + std::to_string(slot2Stats.usedBytes);
+        dbg += " mtp_used_bytes=" + std::to_string(mtpTotalUsedBytes);
+        dbg += " out1=" + std::to_string(*outSlot1UsedBytes) + "/" + std::to_string(*outSlot1TotalBytes);
+        dbg += " out2=" + std::to_string(*outSlot2UsedBytes) + "/" + std::to_string(*outSlot2TotalBytes);
+        std::lock_guard<std::mutex> lk(g_sdUsageDebugMutex);
+        g_lastSdUsageDebug = std::move(dbg);
+    }
+
+    return SONY_CR_OK;
+#endif
+}
+
+SONY_CR_API SonyCrStatus SonyCr_GetLastSdUsageDebugUtf8(char* buffer, int bufferSizeBytes, int* outWritten)
+{
+#if SONY_CR_BRIDGE_STUB
+    static const char kStub[] = "sd-usage: stub";
+    const int need = static_cast<int>(sizeof(kStub));
+    if (outWritten)
+        *outWritten = need;
+    if (!buffer || bufferSizeBytes < need)
+        return SONY_CR_ERR_BUFFER_TOO_SMALL;
+    std::memcpy(buffer, kStub, static_cast<size_t>(need));
+    return SONY_CR_OK;
+#else
+    std::lock_guard<std::mutex> lk(g_sdUsageDebugMutex);
+    const std::string& s = g_lastSdUsageDebug.empty() ? std::string("sd-usage: empty") : g_lastSdUsageDebug;
+    const int need = static_cast<int>(s.size() + 1);
+    if (outWritten)
+        *outWritten = need;
+    if (!buffer || bufferSizeBytes < need)
+        return SONY_CR_ERR_BUFFER_TOO_SMALL;
+    std::memcpy(buffer, s.c_str(), static_cast<size_t>(need));
+    return SONY_CR_OK;
+#endif
+}
+
+SONY_CR_API SonyCrStatus SonyCr_GetLastCapturePullDebugUtf8(char* buffer, int bufferSizeBytes, int* outWritten)
+{
+#if SONY_CR_BRIDGE_STUB
+    static const char kStub[] = "capture-pull: sdk-not-linked";
+    const int need = static_cast<int>(sizeof(kStub));
+    if (outWritten)
+        *outWritten = need;
+    if (!buffer || bufferSizeBytes < need)
+        return SONY_CR_ERR_BUFFER_TOO_SMALL;
+    std::memcpy(buffer, kStub, static_cast<size_t>(need));
+    return SONY_CR_OK;
+#else
+    std::lock_guard<std::mutex> lk(g_capturePullDebugMutex);
+    const std::string& s = g_lastCapturePullDebug.empty() ? std::string("capture-pull: empty") : g_lastCapturePullDebug;
+    const int need = static_cast<int>(s.size() + 1);
+    if (outWritten)
+        *outWritten = need;
+    if (!buffer || bufferSizeBytes < need)
+        return SONY_CR_ERR_BUFFER_TOO_SMALL;
+    std::memcpy(buffer, s.c_str(), static_cast<size_t>(need));
     return SONY_CR_OK;
 #endif
 }
@@ -1893,7 +2452,7 @@ static bool CaptureDateGreaterUtc(const CrCaptureDate& a, const CrCaptureDate& b
  */
 static bool TryPullLatestStillsViaRemoteTransfer(CrChar* destFolderPath, int pullCount)
 {
-    if (pullCount < 2 || !destFolderPath)
+    if (pullCount < 1 || !destFolderPath)
         return false;
 
     CrSlotNumber chosenSlot = CrSlotNumber_Slot1;
@@ -2088,23 +2647,35 @@ SONY_CR_API SonyCrStatus SonyCr_PullLatestStillsToFolderUtf16(const unsigned sho
     if (pullCount > 16)
         pullCount = 16;
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(1300));
+    // 拍照后给机身极短缓冲，避免 UI 长时间阻塞。
+    std::this_thread::sleep_for(std::chrono::milliseconds(320));
 
     const CrInt32u nPull = static_cast<CrInt32u>(pullCount);
     CrChar* const destPath = const_cast<CrChar*>(reinterpret_cast<const CrChar*>(destFolderUtf16));
+    std::string dbg = "capture-pull begin";
+    dbg += " pullCount=" + std::to_string(pullCount);
 
-    // RAW+JPEG：官方 Remote Transfer 列表中单条 CrContentsInfo 含多个 fileId；MTP 的 PullContentsFile 易只拉到一条。
-    if (pullCount >= 2 && TryPullLatestStillsViaRemoteTransfer(destPath, pullCount))
+    // 优先 Remote Transfer：按 contentId/fileId 拉原始文件。
+    // 实测部分机型在 HEIF 单文件场景下，MTP PullContentsFile 可能只给到低分辨率图；此处先走 Remote Transfer 更稳。
+    if (TryPullLatestStillsViaRemoteTransfer(destPath, pullCount))
+    {
+        dbg += " mode=remote ok";
+        dbg += " " + TryGetLatestFileSummaryInFolder(destPath);
+        std::lock_guard<std::mutex> lk(g_capturePullDebugMutex);
+        g_lastCapturePullDebug = std::move(dbg);
         return SONY_CR_OK;
+    }
+    dbg += " mode=remote fail";
 
     std::vector<SCRSDK::CrContentHandle> pullHandles;
     pullHandles.reserve(static_cast<size_t>(nPull));
 
-    constexpr int kMaxWaitAttempts = 32;
+    // 失败快速返回：上层会决定是否继续后台补偿，不在这里长时间阻塞。
+    constexpr int kMaxWaitAttempts = 5;
     for (int attempt = 0; attempt < kMaxWaitAttempts; ++attempt)
     {
         if (attempt > 0)
-            std::this_thread::sleep_for(std::chrono::milliseconds(280));
+            std::this_thread::sleep_for(std::chrono::milliseconds(120));
 
         pullHandles.clear();
 
@@ -2165,9 +2736,58 @@ SONY_CR_API SonyCrStatus SonyCr_PullLatestStillsToFolderUtf16(const unsigned sho
         }
 
         if (okCount > 0)
+        {
+            dbg += " mode=mtp ok";
+            dbg += " okCount=" + std::to_string(static_cast<unsigned>(okCount));
+            dbg += " " + TryGetLatestFileSummaryInFolder(destPath);
+            std::lock_guard<std::mutex> lk(g_capturePullDebugMutex);
+            g_lastCapturePullDebug = std::move(dbg);
             return SONY_CR_OK;
+        }
     }
 
+    dbg += " mode=mtp fail";
+
+    // 官方 sample_RemoteTransferMode 使用 CrSdkControlMode_RemoteTransfer 进行内容拉取。
+    // 某些机型在 Remote 模式下会持续 ErrControlFailed(-8)；这里失败后自动切换模式重试一次，再切回 Remote。
+    bool switchedToRemoteTransfer = false;
+    {
+        std::lock_guard lock(g_mutex);
+        switchedToRemoteTransfer = ReconnectByIndexWithModeUnlocked(0, CrSdkControlMode_RemoteTransfer, false);
+    }
+    if (switchedToRemoteTransfer)
+    {
+        dbg += " modeSwitch=toRemoteTransfer";
+        std::this_thread::sleep_for(std::chrono::milliseconds(160));
+        if (TryPullLatestStillsViaRemoteTransfer(destPath, pullCount))
+        {
+            dbg += " mode=remoteTransferSession ok";
+            dbg += " " + TryGetLatestFileSummaryInFolder(destPath);
+            bool backRemoteOk = false;
+            {
+                std::lock_guard lock(g_mutex);
+                backRemoteOk = ReconnectByIndexWithModeUnlocked(0, CrSdkControlMode_Remote, true);
+            }
+            dbg += backRemoteOk ? " backRemote=ok" : " backRemote=fail";
+            std::lock_guard<std::mutex> lk(g_capturePullDebugMutex);
+            g_lastCapturePullDebug = std::move(dbg);
+            return SONY_CR_OK;
+        }
+        dbg += " mode=remoteTransferSession fail";
+        bool backRemoteOk = false;
+        {
+            std::lock_guard lock(g_mutex);
+            backRemoteOk = ReconnectByIndexWithModeUnlocked(0, CrSdkControlMode_Remote, true);
+        }
+        dbg += backRemoteOk ? " backRemote=ok" : " backRemote=fail";
+    }
+    else
+    {
+        dbg += " modeSwitch=toRemoteTransfer-fail";
+    }
+
+    std::lock_guard<std::mutex> lk(g_capturePullDebugMutex);
+    g_lastCapturePullDebug = std::move(dbg);
     return SONY_CR_ERR_CONTROL_FAILED;
 #endif
 }

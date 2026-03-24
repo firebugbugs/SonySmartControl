@@ -133,6 +133,24 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     [NotifyPropertyChangedFor(nameof(CameraConnectionTooltip))]
     private int _captureFormatIndex;
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StillImageQualityLabel))]
+    [NotifyPropertyChangedFor(nameof(StillImageSizeLabel))]
+    private int _selectedStillCodecIndex;
+
+    [ObservableProperty] private int _selectedStillFileFormatIndex;
+
+    [ObservableProperty] private ObservableCollection<string> _stillCodecChoices = new(new[] { "JPEG", "HEIF" });
+
+    private static readonly IReadOnlyList<string> JpegStillFileFormats = new[] { "JPEG", "RAW", "RAW + JPEG" };
+    private static readonly IReadOnlyList<string> HeifStillFileFormats = new[] { "HEIF", "RAW", "RAW + HEIF" };
+
+    public IReadOnlyList<string> CurrentStillFileFormatChoices =>
+        SelectedStillCodecIndex == 1 ? HeifStillFileFormats : JpegStillFileFormats;
+
+    public string StillImageQualityLabel => SelectedStillCodecIndex == 1 ? "HEIF 质量" : "JPEG 质量";
+    public string StillImageSizeLabel => SelectedStillCodecIndex == 1 ? "HEIF 尺寸" : "JPEG 尺寸";
+
     [ObservableProperty] private string _fileNamePrefix;
 
     [ObservableProperty] private string _timelapseSaveDirectory;
@@ -159,6 +177,14 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     [NotifyPropertyChangedFor(nameof(CameraConnectionTooltip))]
     private string _connectedCameraModelName = "未知";
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CameraConnectionTooltip))]
+    private string _connectedCameraLensModelName = "暂未识别";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CameraConnectionTooltip))]
+    private string _connectedCameraBatteryLevelText = "暂未识别";
+
     public bool IsConnectEnabled => !IsSessionActive && !IsConnecting;
 
     public bool IsDisconnectEnabled => IsSessionActive;
@@ -176,10 +202,12 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         {
             1 => "RAW",
             2 => "RAW + JPEG",
+            3 => "HEIF",
+            4 => "RAW + HEIF",
             _ => "JPEG",
         };
     public string CameraConnectionTooltip =>
-        $"状态：{CameraConnectionBadgeText}\n型号：{(string.IsNullOrWhiteSpace(ConnectedCameraModelName) ? "未知" : ConnectedCameraModelName)}\n保存目录：{SaveDirectory}\n保存格式：{CaptureFormatLabel}";
+        $"状态：{CameraConnectionBadgeText}\n型号：{(string.IsNullOrWhiteSpace(ConnectedCameraModelName) ? "未知" : ConnectedCameraModelName)}\n镜头：{ConnectedCameraLensModelName}\n电量：{ConnectedCameraBatteryLevelText}\n保存目录：{SaveDirectory}";
 
     /// <summary>构图辅助线下拉项（顺序与 <see cref="GuideOverlayIndex"/> 一致）。</summary>
     public ObservableCollection<string> GuideOverlayChoices { get; } = new(
@@ -209,6 +237,10 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     [ObservableProperty] private string _sdCardSlot2SummaryText = "—";
     [ObservableProperty] private double _sdCardSlot2UsagePercent;
     [ObservableProperty] private IBrush _sdCardSlot2ProgressBrush = new SolidColorBrush(Color.Parse("#F59E0B")); // 橙色：>80%，默认先给橙色防止误显示绿色
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasSdCardUsageDebugText))]
+    private string _sdCardUsageDebugText = "";
+    public bool HasSdCardUsageDebugText => !string.IsNullOrWhiteSpace(SdCardUsageDebugText);
 
     /// <summary>右侧遥控区：0=拍照，1=摄影。</summary>
     [ObservableProperty]
@@ -253,6 +285,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         _persistEnabled = false;
         _saveDirectory = s.SaveDirectory;
         _captureFormatIndex = s.CaptureFormatIndex;
+        RefreshStillFormatUiFromCaptureFormat(_captureFormatIndex);
         _fileNamePrefix = s.FileNamePrefix;
         _timelapseSaveDirectory = s.TimelapseSaveDirectory;
         _timelapseIntervalSeconds = Math.Max(2, s.TimelapseIntervalSeconds);
@@ -846,6 +879,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     /// 串行化所有会触发 S1 半按的操作（对焦键、预览按住、拍照键），避免与快门释放竞态导致 ErrControlFailed(-8)。
     /// </summary>
     private readonly SemaphoreSlim _shutterPipelineLock = new(1, 1);
+    private bool _captureFormatUiSync;
 
     /// <summary>
     /// 从「拍照键按下」到释放快门、冷却结束整段完成前为 true；期间拒绝新的对焦/预览半按指令。
@@ -1111,14 +1145,20 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         {
             if (_session != null)
             {
+                var capturedType = IndexToFileType(CaptureFormatIndex);
                 await _session
                     .CaptureStillReleaseAfterHalfPressAsync(
                         SaveDirectory,
                         FileNamePrefix,
-                        IndexToFileType(CaptureFormatIndex))
+                        capturedType)
                     .ConfigureAwait(true);
-                StatusMessage = "已拍照；若未看到文件，请确认所选文件夹且机身允许遥控存到电脑（大文件传完前勿断开）。";
+                var setupDbg = SonyCrSdk.GetLastCaptureTransferSetupDebugText();
+                var pullDbg = SonyCrSdk.TryGetLastCapturePullDebugText();
+                StatusMessage = string.IsNullOrWhiteSpace(pullDbg)
+                    ? $"已拍照。传输诊断：{setupDbg}"
+                    : $"已拍照。传输诊断：{setupDbg} | {pullDbg}";
                 _ = RegisterRecentCaptureAsync();
+                _ = TryRepairHeifOriginalInBackgroundAsync(capturedType, SaveDirectory);
             }
         }
         catch (Exception ex)
@@ -1277,6 +1317,89 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
 
     private bool CanCrSdkCameraOps() => IsSessionActive && _session != null;
 
+    /// <summary>
+    /// HEIF 机型拍后常遇到“机身仍在写卡，立即拉取返回 busy/-8”。
+    /// 这里做后台延迟补拉，不阻塞拍照主流程；成功后刷新胶片列表。
+    /// </summary>
+    private async Task TryRepairHeifOriginalInBackgroundAsync(CrSdkFileType capturedType, string saveDir)
+    {
+        if (!IsSessionActive)
+            return;
+        if (capturedType is not (CrSdkFileType.Heif or CrSdkFileType.RawHeif))
+            return;
+        if (string.IsNullOrWhiteSpace(saveDir))
+            return;
+
+        var dir = saveDir.Trim();
+        var pullCount = capturedType == CrSdkFileType.RawHeif ? 2 : 1;
+        Exception? last = null;
+        var delaysMs = new[] { 1400, 2600, 4200 };
+        var shouldResumeLiveView = false;
+        try
+        {
+            try
+            {
+                // 关键：停止会话层 LiveView 拉帧线程，避免与内容传输并发导致 -8。
+                if (_session != null && LiveViewEnabled)
+                {
+                    await _session.SetLiveViewEnabledAsync(false).ConfigureAwait(true);
+                    shouldResumeLiveView = true;
+                }
+            }
+            catch
+            {
+                shouldResumeLiveView = false;
+            }
+
+            for (var i = 0; i < delaysMs.Length; i++)
+            {
+                if (!IsSessionActive)
+                    return;
+                await Task.Delay(delaysMs[i]).ConfigureAwait(true);
+                try
+                {
+                    if (!SonyCrBridgeNative.TryPullLatestStillsToFolderUtf16(dir, pullCount))
+                        continue;
+
+                    await Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        _ = SyncRecentGalleryWithDisk();
+                        StatusMessage = "HEIF 原图后台补拉成功。";
+                    });
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    last = ex;
+                }
+            }
+        }
+        finally
+        {
+            if (shouldResumeLiveView && _session != null && IsSessionActive)
+            {
+                try
+                {
+                    await _session.SetLiveViewEnabledAsync(true).ConfigureAwait(true);
+                }
+                catch
+                {
+                }
+            }
+        }
+
+        if (last != null)
+        {
+            var dbg = SonyCrSdk.TryGetLastCapturePullDebugText();
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                StatusMessage = string.IsNullOrWhiteSpace(dbg)
+                    ? "HEIF 原图后台补拉失败：" + last.Message
+                    : $"HEIF 原图后台补拉失败：{last.Message} | {dbg}";
+            });
+        }
+    }
+
     /// <summary>机身驱动模式为连拍（Hi/Lo/Mid 等）时，拍照键采用「按住连拍、松手结束」。</summary>
     private bool IsBurstDriveMode() =>
         _lastShootingState?.DriveMode != null
@@ -1318,14 +1441,94 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
 
     partial void OnCaptureFormatIndexChanged(int value)
     {
+        RefreshStillFormatUiFromCaptureFormat(value);
         if (_persistEnabled)
             _userCameraSettings.Save(ToSettings());
         if (IsSessionActive && _session != null)
             _ = PushCaptureFormatToCameraAsync();
     }
 
+    partial void OnSelectedStillCodecIndexChanged(int value)
+    {
+        if (_captureFormatUiSync)
+            return;
 
-    /// <summary>用户更改「仅 JPEG / RAW / RAW+JPEG」后立即同步 <see cref="CrSdkDevicePropertyCodes.FileType"/>，避免仍按旧格式拍摄。</summary>
+        var codec = value == 1 ? 1 : 0;
+        // 切换编码后默认回到首项（JPEG 或 HEIF），避免沿用旧索引导致联动错乱。
+        const int fileFmt = 0;
+
+        _captureFormatUiSync = true;
+        try
+        {
+            OnPropertyChanged(nameof(CurrentStillFileFormatChoices));
+            SelectedStillFileFormatIndex = fileFmt;
+        }
+        finally
+        {
+            _captureFormatUiSync = false;
+        }
+
+        CaptureFormatIndex = ComposeCaptureFormatIndex(codec, fileFmt);
+    }
+
+    partial void OnSelectedStillFileFormatIndexChanged(int value)
+    {
+        if (_captureFormatUiSync)
+            return;
+        var codec = SelectedStillCodecIndex == 1 ? 1 : 0;
+        var fileFmt = value;
+        if (fileFmt < 0 || fileFmt > 2)
+            fileFmt = 0;
+        CaptureFormatIndex = ComposeCaptureFormatIndex(codec, fileFmt);
+    }
+
+    private void RefreshStillFormatUiFromCaptureFormat(int captureFormatIndex)
+    {
+        var codec = captureFormatIndex is 3 or 4 ? 1 : 0;
+        var fileFmt = captureFormatIndex switch
+        {
+            1 => 1,
+            2 => 2,
+            4 => 2,
+            3 => 0,
+            _ => 0,
+        };
+
+        _captureFormatUiSync = true;
+        try
+        {
+            SelectedStillCodecIndex = codec;
+            OnPropertyChanged(nameof(CurrentStillFileFormatChoices));
+            SelectedStillFileFormatIndex = fileFmt;
+        }
+        finally
+        {
+            _captureFormatUiSync = false;
+        }
+    }
+
+    private static int ComposeCaptureFormatIndex(int codec, int fileFmt)
+    {
+        if (codec == 1)
+        {
+            return fileFmt switch
+            {
+                1 => 1,
+                2 => 4,
+                _ => 3,
+            };
+        }
+
+        return fileFmt switch
+        {
+            1 => 1,
+            2 => 2,
+            _ => 0,
+        };
+    }
+
+
+    /// <summary>用户更改文件格式后立即同步 <see cref="CrSdkDevicePropertyCodes.FileType"/>，避免仍按旧格式拍摄。</summary>
     private async Task PushCaptureFormatToCameraAsync()
     {
         if (_session == null)
@@ -1483,6 +1686,8 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         {
             1 => CrSdkFileType.Raw,
             2 => CrSdkFileType.RawJpeg,
+            3 => CrSdkFileType.Heif,
+            4 => CrSdkFileType.RawHeif,
             _ => CrSdkFileType.Jpeg,
         };
 
@@ -1495,6 +1700,9 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         IsConnecting = true;
         StatusMessage = "正在连接相机，请稍候…";
         ConnectedCameraModelName = "未知";
+        ConnectedCameraLensModelName = "暂未识别";
+        ConnectedCameraBatteryLevelText = "暂未识别";
+        SdCardUsageDebugText = "";
 
         var session = _cameraPreviewSessionFactory.Create();
 
@@ -1524,9 +1732,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
 
             _session = session;
             IsSessionActive = true;
-            ConnectedCameraModelName = string.IsNullOrWhiteSpace(session.ConnectedCameraModel)
-                ? "未知"
-                : session.ConnectedCameraModel;
+            ConnectedCameraModelName = NormalizeCameraModelName(session.ConnectedCameraModel);
             _liveViewSyncFromSession = true;
             LiveViewEnabled = true;
             _liveViewSyncFromSession = false;
@@ -1604,6 +1810,9 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             ClearPreview();
             IsSessionActive = false;
             ConnectedCameraModelName = "未知";
+            ConnectedCameraLensModelName = "暂未识别";
+            ConnectedCameraBatteryLevelText = "暂未识别";
+            SdCardUsageDebugText = "";
         });
     }
 
@@ -1618,6 +1827,25 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
 
         await ShutdownCameraSessionAsync().ConfigureAwait(true);
         StatusMessage = "已断开。";
+    }
+
+    private static string NormalizeCameraModelName(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return "未知";
+        var s = raw.Trim();
+        var nul = s.IndexOf('\0');
+        if (nul >= 0)
+            s = s[..nul];
+        Span<char> buffer = stackalloc char[s.Length];
+        var n = 0;
+        foreach (var ch in s)
+        {
+            if (!char.IsControl(ch))
+                buffer[n++] = ch;
+        }
+        var normalized = new string(buffer[..n]).Trim();
+        return string.IsNullOrWhiteSpace(normalized) ? "未知" : normalized;
     }
 
     /// <summary>
@@ -1656,11 +1884,24 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
                 SdCardSlot2HasCard = false;
                 SdCardSlot2SummaryText = "加载中…";
                 SdCardSlot2UsagePercent = 0;
+                SdCardUsageDebugText = "诊断：读取中…";
             });
 
             var usage = await _session.TryGetSdCardUsageEstimateAsync(token).ConfigureAwait(false);
-            if (usage == null || !IsSessionActive)
+            var debugText = _session.TryGetSdCardUsageDebugText();
+            if (!IsSessionActive)
                 return;
+            if (usage == null)
+            {
+                StatusMessage = "获取 SD 卡容量失败：桥接未返回结果（可能是旧版 DLL 或会话瞬断）。";
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    SdCardUsageDebugText = string.IsNullOrWhiteSpace(debugText)
+                        ? "诊断：桥接未返回调试文本（可能仍在使用旧版 DLL）。"
+                        : $"诊断：{debugText}";
+                });
+                return;
+            }
 
             static string FormatStorageHuman(ulong bytes)
             {
@@ -1677,22 +1918,44 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             }
 
             static double Clamp0to100(double v) => Math.Max(0, Math.Min(100, v));
+            static int TryReadDiagInt(string? dbg, string key)
+            {
+                if (string.IsNullOrWhiteSpace(dbg) || string.IsNullOrWhiteSpace(key))
+                    return int.MinValue;
+                var marker = key + "=";
+                var idx = dbg.IndexOf(marker, StringComparison.Ordinal);
+                if (idx < 0)
+                    return int.MinValue;
+                idx += marker.Length;
+                var end = dbg.IndexOf(' ', idx);
+                var token = end >= idx ? dbg[idx..end] : dbg[idx..];
+                return int.TryParse(token, NumberStyles.Integer, CultureInfo.InvariantCulture, out var v)
+                    ? v
+                    : int.MinValue;
+            }
 
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
                 if (usage.Value.Slot1HasCard)
                 {
                     SdCardSlot1HasCard = true;
+                    var slot1ContentsEnable = TryReadDiagInt(debugText, "slot1_contents_enable");
+                    var slot1RemainingShots = TryReadDiagInt(debugText, "slot1_remaining");
                     var percent = usage.Value.Slot1TotalBytes == 0
                         ? 0
                         : Clamp0to100(usage.Value.Slot1UsedBytes * 100d / usage.Value.Slot1TotalBytes);
+                    var slot1UsageUnavailable = slot1ContentsEnable == 0 && usage.Value.Slot1UsedBytes == 0;
+                    var slot1HasRemainingShots = slot1RemainingShots >= 0;
 
                     SdCardSlot1UsagePercent = percent;
-                    SdCardSlot1ProgressBrush = percent > 80
-                        ? new SolidColorBrush(Color.Parse("#F59E0B"))
-                        : new SolidColorBrush(Color.Parse("#2FBF71"));
-                    SdCardSlot1SummaryText =
-                        $"容量 {FormatStorageHuman(usage.Value.Slot1TotalBytes)}，使用 {FormatStorageHuman(usage.Value.Slot1UsedBytes)} ({percent:0.0}%)";
+                    SdCardSlot1ProgressBrush = slot1UsageUnavailable
+                        ? new SolidColorBrush(Color.Parse("#9CA3AF"))
+                        : percent > 80
+                            ? new SolidColorBrush(Color.Parse("#F59E0B"))
+                            : new SolidColorBrush(Color.Parse("#2FBF71"));
+                    SdCardSlot1SummaryText = slot1HasRemainingShots
+                        ? $"容量 {FormatStorageHuman(usage.Value.Slot1TotalBytes)}，剩余约 {slot1RemainingShots} 张"
+                        : $"容量 {FormatStorageHuman(usage.Value.Slot1TotalBytes)}，使用 {FormatStorageHuman(usage.Value.Slot1UsedBytes)} ({percent:0.0}%)";
                 }
                 else
                 {
@@ -1704,16 +1967,23 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
                 if (usage.Value.Slot2HasCard)
                 {
                     SdCardSlot2HasCard = true;
+                    var slot2ContentsEnable = TryReadDiagInt(debugText, "slot2_contents_enable");
+                    var slot2RemainingShots = TryReadDiagInt(debugText, "slot2_remaining");
                     var percent = usage.Value.Slot2TotalBytes == 0
                         ? 0
                         : Clamp0to100(usage.Value.Slot2UsedBytes * 100d / usage.Value.Slot2TotalBytes);
+                    var slot2UsageUnavailable = slot2ContentsEnable == 0 && usage.Value.Slot2UsedBytes == 0;
+                    var slot2HasRemainingShots = slot2RemainingShots >= 0;
 
                     SdCardSlot2UsagePercent = percent;
-                    SdCardSlot2ProgressBrush = percent > 80
-                        ? new SolidColorBrush(Color.Parse("#F59E0B"))
-                        : new SolidColorBrush(Color.Parse("#2FBF71"));
-                    SdCardSlot2SummaryText =
-                        $"容量 {FormatStorageHuman(usage.Value.Slot2TotalBytes)}，使用 {FormatStorageHuman(usage.Value.Slot2UsedBytes)} ({percent:0.0}%)";
+                    SdCardSlot2ProgressBrush = slot2UsageUnavailable
+                        ? new SolidColorBrush(Color.Parse("#9CA3AF"))
+                        : percent > 80
+                            ? new SolidColorBrush(Color.Parse("#F59E0B"))
+                            : new SolidColorBrush(Color.Parse("#2FBF71"));
+                    SdCardSlot2SummaryText = slot2HasRemainingShots
+                        ? $"容量 {FormatStorageHuman(usage.Value.Slot2TotalBytes)}，剩余约 {slot2RemainingShots} 张"
+                        : $"容量 {FormatStorageHuman(usage.Value.Slot2TotalBytes)}，使用 {FormatStorageHuman(usage.Value.Slot2UsedBytes)} ({percent:0.0}%)";
                 }
                 else
                 {
@@ -1721,6 +1991,10 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
                     SdCardSlot2SummaryText = "未插卡";
                     SdCardSlot2UsagePercent = 0;
                 }
+
+                SdCardUsageDebugText = string.IsNullOrWhiteSpace(debugText)
+                    ? "诊断：桥接未返回调试文本（可能仍在使用旧版 DLL）。"
+                    : $"诊断：{debugText}";
             });
         }
         catch (OperationCanceledException)

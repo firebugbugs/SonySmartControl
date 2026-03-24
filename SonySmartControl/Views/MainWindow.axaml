@@ -334,6 +334,54 @@
                                    Foreground="#1F2430"/>
                         <Border Padding="10"
                                 CornerRadius="8"
+                                BorderBrush="#DDE8FF"
+                                BorderThickness="1"
+                                Background="#F7FAFF">
+                            <StackPanel Spacing="8">
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                                    <TextBlock Grid.Column="0"
+                                               Text="相机型号"
+                                               VerticalAlignment="Center"
+                                               Foreground="#5B6575"/>
+                                    <TextBlock Grid.Column="1"
+                                               Text="{Binding ConnectedCameraModelName}"
+                                               FontWeight="SemiBold"
+                                               VerticalAlignment="Center"
+                                               TextTrimming="CharacterEllipsis"/>
+                                </Grid>
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                                    <TextBlock Grid.Column="0"
+                                               Text="镜头型号"
+                                               VerticalAlignment="Center"
+                                               Foreground="#5B6575"/>
+                                    <TextBlock Grid.Column="1"
+                                               Text="{Binding ConnectedCameraLensModelName}"
+                                               FontWeight="SemiBold"
+                                               VerticalAlignment="Center"
+                                               TextTrimming="CharacterEllipsis"/>
+                                </Grid>
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                                    <TextBlock Grid.Column="0"
+                                               Text="相机电量"
+                                               VerticalAlignment="Center"
+                                               Foreground="#5B6575"/>
+                                    <Border Grid.Column="1"
+                                            HorizontalAlignment="Left"
+                                            Padding="8,2"
+                                            CornerRadius="999"
+                                            Background="#EAF2FF"
+                                            BorderBrush="#C9DDFF"
+                                            BorderThickness="1">
+                                        <TextBlock Text="{Binding ConnectedCameraBatteryLevelText}"
+                                                   VerticalAlignment="Center"
+                                                   Foreground="#2A5EA8"
+                                                   FontWeight="SemiBold"/>
+                                    </Border>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+                        <Border Padding="10"
+                                CornerRadius="8"
                                 BorderBrush="#E5EAF0"
                                 BorderThickness="1"
                                 Background="#FAFBFD">

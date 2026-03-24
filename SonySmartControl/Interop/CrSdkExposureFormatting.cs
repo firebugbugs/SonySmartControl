@@ -153,6 +153,62 @@ public static class CrSdkExposureFormatting
     /// <summary>CrFlashCompensation（EV×1000，UInt16 补码）。</summary>
     public static string FormatFlashCompensation(ulong raw) => FormatExposureBias(raw);
 
+    /// <summary>CrImageQuality（UInt16）。</summary>
+    public static string FormatImageQuality(ulong raw)
+    {
+        var q = (ushort)(raw & 0xFFFF);
+        return q switch
+        {
+            0x0001 => "轻量 (Light)",
+            0x0002 => "标准 (Standard)",
+            0x0003 => "精细 (Fine)",
+            0x0004 => "超精细 (Extra Fine)",
+            _ => "0x" + q.ToString("X4", CultureInfo.InvariantCulture),
+        };
+    }
+
+    public static string FormatImageSize(ulong raw)
+    {
+        var s = (ushort)(raw & 0xFFFF);
+        return s switch
+        {
+            0x0001 => "L",
+            0x0002 => "M",
+            0x0003 => "S",
+            0x0004 => "VGA",
+            _ => "0x" + s.ToString("X4", CultureInfo.InvariantCulture),
+        };
+    }
+
+    public static string FormatAspectRatio(ulong raw)
+    {
+        var a = (ushort)(raw & 0xFFFF);
+        return a switch
+        {
+            0x0001 => "3:2",
+            0x0002 => "16:9",
+            0x0003 => "4:3",
+            0x0004 => "1:1",
+            _ => "0x" + a.ToString("X4", CultureInfo.InvariantCulture),
+        };
+    }
+
+    public static string FormatRawCompressionType(ulong raw)
+    {
+        var c = (ushort)(raw & 0xFFFF);
+        return c switch
+        {
+            0x0000 => "未压缩",
+            0x0001 => "压缩",
+            0x0002 => "无损压缩",
+            0x0003 => "无损压缩 S",
+            0x0004 => "无损压缩 M",
+            0x0005 => "无损压缩 L",
+            0x0006 => "压缩 HQ",
+            _ => "0x" + c.ToString("X4", CultureInfo.InvariantCulture),
+        };
+    }
+
     /// <summary>
     /// 侧栏曝光模式下拉：仅保留「照片」常用项，去掉摄像/视频相关与未知 <c>0x……</c> 占位。
     /// </summary>

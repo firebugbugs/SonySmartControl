@@ -124,12 +124,6 @@
                                         <TextBlock Text="文件名前缀"/>
                                         <TextBox Text="{Binding FileNamePrefix}" Watermark="例如 DSC"/>
 
-                                        <TextBlock Text="保存格式"/>
-                                        <ComboBox SelectedIndex="{Binding CaptureFormatIndex}">
-                                            <ComboBoxItem Content="JPEG"/>
-                                            <ComboBoxItem Content="RAW"/>
-                                            <ComboBoxItem Content="RAW + JPEG"/>
-                                        </ComboBox>
                                     </StackPanel>
                                 </Expander>
 
@@ -181,6 +175,82 @@
                                                            Opacity="0.85"
                                                            Foreground="#666666"
                                                            IsVisible="{Binding HasDriveModeOtherHint}"/>
+
+                                                <TextBlock Text="JPEG/HEIF 切换"
+                                                           ToolTip.Tip="切换静态图像编码：JPEG 或 HEIF。"/>
+                                                <ComboBox MinHeight="32"
+                                                          HorizontalAlignment="Stretch"
+                                                          ItemsSource="{Binding StillCodecChoices}"
+                                                          SelectedIndex="{Binding SelectedStillCodecIndex, Mode=TwoWay}"
+                                                          behaviors:ComboBoxWheelToParentScrollBehavior.IsWheelToParentScrollEnabled="True"/>
+
+                                                <TextBlock Text="文件格式"
+                                                           ToolTip.Tip="选择 JPEG/HEIF、RAW、RAW+JPEG/RAW+HEIF。"/>
+                                                <ComboBox MinHeight="32"
+                                                          HorizontalAlignment="Stretch"
+                                                          ItemsSource="{Binding CurrentStillFileFormatChoices}"
+                                                          SelectedIndex="{Binding SelectedStillFileFormatIndex, Mode=TwoWay}"
+                                                          behaviors:ComboBoxWheelToParentScrollBehavior.IsWheelToParentScrollEnabled="True"/>
+
+                                                <TextBlock Text="RAW 文件格式"
+                                                           ToolTip.Tip="RAW 未压缩 / 压缩 / 无损压缩 S/M/L 等（由机身候选决定）。"/>
+                                                <ComboBox MinHeight="32"
+                                                          HorizontalAlignment="Stretch"
+                                                          ItemsSource="{Binding RawCompressionChoices}"
+                                                          SelectedIndex="{Binding SelectedRawCompressionIndex, Mode=TwoWay}"
+                                                          IsEnabled="{Binding RawCompressionEnabled}"
+                                                          behaviors:ComboBoxWheelToParentScrollBehavior.IsWheelToParentScrollEnabled="True">
+                                                    <ComboBox.ItemTemplate>
+                                                        <DataTemplate x:DataType="interop:ShootingChoiceItem">
+                                                            <TextBlock Text="{Binding Display}"/>
+                                                        </DataTemplate>
+                                                    </ComboBox.ItemTemplate>
+                                                </ComboBox>
+
+                                                <TextBlock Text="{Binding StillImageQualityLabel}"
+                                                           ToolTip.Tip="JPEG/HEIF 质量：轻量 / 标准 / 精细 / 超精细（由机身候选决定）。"/>
+                                                <ComboBox MinHeight="32"
+                                                          HorizontalAlignment="Stretch"
+                                                          ItemsSource="{Binding ImageQualityChoices}"
+                                                          SelectedIndex="{Binding SelectedImageQualityIndex, Mode=TwoWay}"
+                                                          IsEnabled="{Binding ImageQualityEnabled}"
+                                                          behaviors:ComboBoxWheelToParentScrollBehavior.IsWheelToParentScrollEnabled="True">
+                                                    <ComboBox.ItemTemplate>
+                                                        <DataTemplate x:DataType="interop:ShootingChoiceItem">
+                                                            <TextBlock Text="{Binding Display}"/>
+                                                        </DataTemplate>
+                                                    </ComboBox.ItemTemplate>
+                                                </ComboBox>
+
+                                                <TextBlock Text="{Binding StillImageSizeLabel}"
+                                                           ToolTip.Tip="L / M / S / VGA（由机身候选决定）。"/>
+                                                <ComboBox MinHeight="32"
+                                                          HorizontalAlignment="Stretch"
+                                                          ItemsSource="{Binding JpegSizeChoices}"
+                                                          SelectedIndex="{Binding SelectedJpegSizeIndex, Mode=TwoWay}"
+                                                          IsEnabled="{Binding JpegSizeEnabled}"
+                                                          behaviors:ComboBoxWheelToParentScrollBehavior.IsWheelToParentScrollEnabled="True">
+                                                    <ComboBox.ItemTemplate>
+                                                        <DataTemplate x:DataType="interop:ShootingChoiceItem">
+                                                            <TextBlock Text="{Binding Display}"/>
+                                                        </DataTemplate>
+                                                    </ComboBox.ItemTemplate>
+                                                </ComboBox>
+
+                                                <TextBlock Text="横纵比"
+                                                           ToolTip.Tip="3:2 / 16:9 / 4:3 / 1:1（由机身候选决定）。"/>
+                                                <ComboBox MinHeight="32"
+                                                          HorizontalAlignment="Stretch"
+                                                          ItemsSource="{Binding AspectRatioChoices}"
+                                                          SelectedIndex="{Binding SelectedAspectRatioIndex, Mode=TwoWay}"
+                                                          IsEnabled="{Binding AspectRatioEnabled}"
+                                                          behaviors:ComboBoxWheelToParentScrollBehavior.IsWheelToParentScrollEnabled="True">
+                                                    <ComboBox.ItemTemplate>
+                                                        <DataTemplate x:DataType="interop:ShootingChoiceItem">
+                                                            <TextBlock Text="{Binding Display}"/>
+                                                        </DataTemplate>
+                                                    </ComboBox.ItemTemplate>
+                                                </ComboBox>
 
                                                 <TextBlock Text="曝光模式（P/A/S/M 等）"/>
                                                 <controls:WheelPickerCombo ItemsSource="{Binding ExposureModeChoices}"

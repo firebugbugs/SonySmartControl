@@ -215,23 +215,29 @@ public partial class MainWindowViewModel
     private static bool IsGalleryImageExtension(string ext)
     {
         ext = ext.ToLowerInvariant();
-        if (ext is ".jpg" or ".jpeg" or ".png" or ".gif" or ".bmp" or ".webp")
+        if (ext is ".jpg" or ".jpeg" or ".png" or ".gif" or ".bmp" or ".webp" or ".hif" or ".heif" or ".heic")
             return true;
         return RawExtensions.Contains(ext);
     }
 
-    /// <summary>同一次快门若同时产生 RAW+JPEG，优先展示 JPEG/PNG（与官方「双格式」习惯一致）。</summary>
+    /// <summary>
+    /// 同一次快门同名多格式的预览优先级：
+    /// JPEG > RAW > HEIF > 其他位图。确保 JPEG+RAW 显示 JPEG，HEIF+RAW 显示 RAW；
+    /// 无 RAW 时仍可显示 HEIF。
+    /// </summary>
     private static int GalleryExtensionPriority(string ext)
     {
         ext = ext.ToLowerInvariant();
         if (ext is ".jpg" or ".jpeg")
             return 0;
-        if (ext == ".png")
+        if (RawExtensions.Contains(ext))
             return 1;
-        if (ext is ".webp")
-            return 2;
         if (ext is ".hif" or ".heif" or ".heic")
+            return 2;
+        if (ext == ".png")
             return 3;
+        if (ext is ".webp")
+            return 4;
         return 10;
     }
 

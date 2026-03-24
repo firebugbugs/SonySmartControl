@@ -70,6 +70,18 @@ public partial class MainWindowViewModel
     [ObservableProperty] private ObservableCollection<ShootingChoiceItem> _flashCompensationChoices = new();
     [ObservableProperty] private int _selectedFlashCompensationIndex = -1;
     [ObservableProperty] private bool _flashCompensationEnabled;
+    [ObservableProperty] private ObservableCollection<ShootingChoiceItem> _imageQualityChoices = new();
+    [ObservableProperty] private int _selectedImageQualityIndex = -1;
+    [ObservableProperty] private bool _imageQualityEnabled;
+    [ObservableProperty] private ObservableCollection<ShootingChoiceItem> _jpegSizeChoices = new();
+    [ObservableProperty] private int _selectedJpegSizeIndex = -1;
+    [ObservableProperty] private bool _jpegSizeEnabled;
+    [ObservableProperty] private ObservableCollection<ShootingChoiceItem> _aspectRatioChoices = new();
+    [ObservableProperty] private int _selectedAspectRatioIndex = -1;
+    [ObservableProperty] private bool _aspectRatioEnabled;
+    [ObservableProperty] private ObservableCollection<ShootingChoiceItem> _rawCompressionChoices = new();
+    [ObservableProperty] private int _selectedRawCompressionIndex = -1;
+    [ObservableProperty] private bool _rawCompressionEnabled;
 
     /// <summary>单张 / 连拍 / 延时自拍（与 <see cref="DriveModeCategoryLabels"/> 下标对应）。</summary>
     [ObservableProperty] private int _selectedDriveCategoryIndex = -1;
@@ -123,6 +135,10 @@ public partial class MainWindowViewModel
     private DateTime? _shootingPollSuppressDrvUtc;
     private DateTime? _shootingPollSuppressFlmUtc;
     private DateTime? _shootingPollSuppressFlcUtc;
+    private DateTime? _shootingPollSuppressIqUtc;
+    private DateTime? _shootingPollSuppressIszUtc;
+    private DateTime? _shootingPollSuppressArUtc;
+    private DateTime? _shootingPollSuppressRawcUtc;
 
     /// <summary>熄屏前一次的非 MonitorOff 模式，用于重新开屏时恢复。</summary>
     private byte? _lastNonOffDispMode;
@@ -259,6 +275,8 @@ public partial class MainWindowViewModel
     private void ClearShootingUi()
     {
         _lastShootingState = null;
+        ConnectedCameraLensModelName = "暂未识别";
+        ConnectedCameraBatteryLevelText = "暂未识别";
         _shootingPollSuppressEpUtc = null;
         _shootingPollSuppressFnUtc = null;
         _shootingPollSuppressSsUtc = null;
@@ -269,6 +287,10 @@ public partial class MainWindowViewModel
         _shootingPollSuppressDrvUtc = null;
         _shootingPollSuppressFlmUtc = null;
         _shootingPollSuppressFlcUtc = null;
+        _shootingPollSuppressIqUtc = null;
+        _shootingPollSuppressIszUtc = null;
+        _shootingPollSuppressArUtc = null;
+        _shootingPollSuppressRawcUtc = null;
         _lastNonOffDispMode = null;
         CameraScreenPowerEnabled = false;
         LiveViewEnabledControlEnabled = false;
@@ -286,6 +308,10 @@ public partial class MainWindowViewModel
         FocusModeEnabled = false;
         FlashModeEnabled = false;
         FlashCompensationEnabled = false;
+        ImageQualityEnabled = false;
+        JpegSizeEnabled = false;
+        AspectRatioEnabled = false;
+        RawCompressionEnabled = false;
         DriveModeCategoryEnabled = false;
         DriveModeSubRowVisible = false;
         DriveModeOtherHint = "";
@@ -302,6 +328,10 @@ public partial class MainWindowViewModel
             SelectedFocusModeIndex = -1;
             SelectedFlashModeIndex = -1;
             SelectedFlashCompensationIndex = -1;
+            SelectedImageQualityIndex = -1;
+            SelectedJpegSizeIndex = -1;
+            SelectedAspectRatioIndex = -1;
+            SelectedRawCompressionIndex = -1;
             SelectedDriveCategoryIndex = -1;
             SelectedDriveSubIndex = -1;
             ExposureModeChoices.Clear();
@@ -313,6 +343,10 @@ public partial class MainWindowViewModel
             FocusModeChoices.Clear();
             FlashModeChoices.Clear();
             FlashCompensationChoices.Clear();
+            ImageQualityChoices.Clear();
+            JpegSizeChoices.Clear();
+            AspectRatioChoices.Clear();
+            RawCompressionChoices.Clear();
         }
         finally
         {
@@ -337,6 +371,11 @@ public partial class MainWindowViewModel
 
         var s = parsed;
         _lastShootingState = s;
+
+        ConnectedCameraLensModelName = string.IsNullOrWhiteSpace(s.LensModelName) ? "暂未识别" : s.LensModelName;
+        ConnectedCameraBatteryLevelText = s.BatteryPercent is >= 0 and <= 100
+            ? $"{s.BatteryPercent.Value}%"
+            : "暂未识别";
 
         IsVideoShootingMode = s.IsVideoMode;
         ShootingPanelOpacity = s.IsVideoMode ? 0.5 : 1.0;
@@ -454,6 +493,63 @@ public partial class MainWindowViewModel
                 true,
                 out var flcEn);
             FlashCompensationEnabled = flcEn;
+        }
+
+        if (!ShouldSuppressPollBind(ref _shootingPollSuppressIqUtc))
+        {
+            BindProp(
+                s.ImageQuality,
+                ImageQualityChoices,
+                CrSdkExposureFormatting.FormatImageQuality,
+                x => SelectedImageQualityIndex = x,
+                () => SelectedImageQualityIndex,
+                allow,
+                true,
+                out var iqEn);
+            // 某些机型对该属性 Writable 会误报 false；有候选时允许尝试写入，失败由机身错误提示。
+            ImageQualityEnabled = allow && ImageQualityChoices.Count > 0 && (iqEn || s.ImageQuality != null);
+        }
+
+        if (!ShouldSuppressPollBind(ref _shootingPollSuppressIszUtc))
+        {
+            BindProp(
+                s.ImageSize,
+                JpegSizeChoices,
+                CrSdkExposureFormatting.FormatImageSize,
+                x => SelectedJpegSizeIndex = x,
+                () => SelectedJpegSizeIndex,
+                allow,
+                true,
+                out var iszEn);
+            JpegSizeEnabled = iszEn;
+        }
+
+        if (!ShouldSuppressPollBind(ref _shootingPollSuppressArUtc))
+        {
+            BindProp(
+                s.AspectRatio,
+                AspectRatioChoices,
+                CrSdkExposureFormatting.FormatAspectRatio,
+                x => SelectedAspectRatioIndex = x,
+                () => SelectedAspectRatioIndex,
+                allow,
+                true,
+                out var arEn);
+            AspectRatioEnabled = arEn;
+        }
+
+        if (!ShouldSuppressPollBind(ref _shootingPollSuppressRawcUtc))
+        {
+            BindProp(
+                s.RawCompressionType,
+                RawCompressionChoices,
+                CrSdkExposureFormatting.FormatRawCompressionType,
+                x => SelectedRawCompressionIndex = x,
+                () => SelectedRawCompressionIndex,
+                allow,
+                true,
+                out var rawcEn);
+            RawCompressionEnabled = rawcEn;
         }
 
         ApplyCameraScreenFromState(s, allow);
@@ -1246,6 +1342,88 @@ public partial class MainWindowViewModel
                 CrSdkDevicePropertyCodes.FlashCompensation,
                 FlashCompensationChoices[value].Value,
                 _lastShootingState.FlashCompensation.SetDataType);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = ex.Message;
+        }
+    }
+
+    partial void OnSelectedImageQualityIndexChanged(int value)
+    {
+        if (_shootingSyncFromCamera || value < 0 || value >= ImageQualityChoices.Count || _lastShootingState?.ImageQuality == null)
+            return;
+        MarkUserShootingEdit(ref _shootingPollSuppressIqUtc);
+        try
+        {
+            _crSdkShootingWrite.SetShootingProperty(
+                CrSdkDevicePropertyCodes.StillImageQuality,
+                ImageQualityChoices[value].Value,
+                _lastShootingState.ImageQuality.SetDataType);
+        }
+        catch (Exception ex)
+        {
+            try
+            {
+                _crSdkShootingWrite.SetShootingProperty(
+                    CrSdkDevicePropertyCodes.MediaSlot1ImageQuality,
+                    ImageQualityChoices[value].Value,
+                    _lastShootingState.ImageQuality.SetDataType);
+            }
+            catch
+            {
+                StatusMessage = ex.Message;
+            }
+        }
+    }
+
+    partial void OnSelectedJpegSizeIndexChanged(int value)
+    {
+        if (_shootingSyncFromCamera || value < 0 || value >= JpegSizeChoices.Count || _lastShootingState?.ImageSize == null)
+            return;
+        MarkUserShootingEdit(ref _shootingPollSuppressIszUtc);
+        try
+        {
+            _crSdkShootingWrite.SetShootingProperty(
+                CrSdkDevicePropertyCodes.ImageSize,
+                JpegSizeChoices[value].Value,
+                _lastShootingState.ImageSize.SetDataType);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = ex.Message;
+        }
+    }
+
+    partial void OnSelectedAspectRatioIndexChanged(int value)
+    {
+        if (_shootingSyncFromCamera || value < 0 || value >= AspectRatioChoices.Count || _lastShootingState?.AspectRatio == null)
+            return;
+        MarkUserShootingEdit(ref _shootingPollSuppressArUtc);
+        try
+        {
+            _crSdkShootingWrite.SetShootingProperty(
+                CrSdkDevicePropertyCodes.AspectRatio,
+                AspectRatioChoices[value].Value,
+                _lastShootingState.AspectRatio.SetDataType);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = ex.Message;
+        }
+    }
+
+    partial void OnSelectedRawCompressionIndexChanged(int value)
+    {
+        if (_shootingSyncFromCamera || value < 0 || value >= RawCompressionChoices.Count || _lastShootingState?.RawCompressionType == null)
+            return;
+        MarkUserShootingEdit(ref _shootingPollSuppressRawcUtc);
+        try
+        {
+            _crSdkShootingWrite.SetShootingProperty(
+                CrSdkDevicePropertyCodes.RawFileCompressionType,
+                RawCompressionChoices[value].Value,
+                _lastShootingState.RawCompressionType.SetDataType);
         }
         catch (Exception ex)
         {

@@ -29,6 +29,24 @@ public static class CrSdkDevicePropertyCodes
     /// <summary>CrDeviceProperty_FileType。</summary>
     public const uint FileType = 0x0106;
 
+    /// <summary>CrDeviceProperty_StillImageQuality（JPEG/HEIF 画质）。</summary>
+    public const uint StillImageQuality = 0x0107;
+
+    /// <summary>CrDeviceProperty_MediaSLOT1_ImageQuality（分槽位画质）。</summary>
+    public const uint MediaSlot1ImageQuality = 0x012D;
+
+    /// <summary>CrDeviceProperty_ImageSize（JPEG 尺寸）。</summary>
+    public const uint ImageSize = 0x0110;
+
+    /// <summary>CrDeviceProperty_AspectRatio（横纵比）。</summary>
+    public const uint AspectRatio = 0x0111;
+
+    /// <summary>CrDeviceProperty_RAW_FileCompressionType（RAW 压缩格式）。</summary>
+    public const uint RawFileCompressionType = 0x0131;
+
+    /// <summary>CrDeviceProperty_CompressionFileFormatStill（JPEG/HEIF 编码）。</summary>
+    public const uint CompressionFileFormatStill = 0x012A;
+
     /// <summary>CrDeviceProperty_StillImageStoreDestination（LiveViewDisplayEffect=0x0118 的下一项）。</summary>
     public const uint StillImageStoreDestination = 0x0119;
 
@@ -37,6 +55,9 @@ public static class CrSdkDevicePropertyCodes
 
     /// <summary>CrDeviceProperty_RAW_J_PC_Save_Image（S2=0x0500 起算第 8 项 → 0x0507）。</summary>
     public const uint RawJpcPcSaveImage = 0x0507;
+
+    /// <summary>CrDeviceProperty_Still_Image_Trans_Size（原图/小图传输尺寸）。</summary>
+    public const uint StillImageTransSize = 0x0506;
 
     /// <summary>CrDeviceProperty_DispMode（背屏 DISP；Monitor Off=熄屏）。</summary>
     public const uint DispMode = 0x0142;

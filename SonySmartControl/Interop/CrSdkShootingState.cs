@@ -1,3 +1,4 @@
+using System;
 using System.Text.Json;
 
 namespace SonySmartControl.Interop;
@@ -6,6 +7,8 @@ namespace SonySmartControl.Interop;
 public sealed class CrSdkShootingState
 {
     public bool IsVideoMode { get; init; }
+    public string? LensModelName { get; init; }
+    public int? BatteryPercent { get; init; }
 
     public CrSdkShootingPropertySnapshot? ExposureProgram { get; init; }
 
@@ -26,6 +29,18 @@ public sealed class CrSdkShootingState
 
     /// <summary>背屏显示模式（JSON 键 <c>dm</c>，含 Monitor Off）。</summary>
     public CrSdkShootingPropertySnapshot? DispMode { get; init; }
+
+    /// <summary>JPEG/HEIF 画质（JSON 键 <c>iq</c>，MediaSLOT1_ImageQuality）。</summary>
+    public CrSdkShootingPropertySnapshot? ImageQuality { get; init; }
+
+    /// <summary>JPEG 尺寸（JSON 键 <c>isz</c>，ImageSize）。</summary>
+    public CrSdkShootingPropertySnapshot? ImageSize { get; init; }
+
+    /// <summary>横纵比（JSON 键 <c>ar</c>，AspectRatio）。</summary>
+    public CrSdkShootingPropertySnapshot? AspectRatio { get; init; }
+
+    /// <summary>RAW 压缩类型（JSON 键 <c>rawc</c>，RAW_FileCompressionType）。</summary>
+    public CrSdkShootingPropertySnapshot? RawCompressionType { get; init; }
 
     /// <summary>快门类型机械/电子/自动（JSON 键 <c>st</c>）。</summary>
     public CrSdkShootingPropertySnapshot? ShutterType { get; init; }
@@ -50,6 +65,12 @@ public sealed class CrSdkShootingState
             state = new CrSdkShootingState
             {
                 IsVideoMode = root.TryGetProperty("video", out var v) && v.ValueKind == JsonValueKind.True,
+                LensModelName = ReadString(root, "lensModelName")
+                    ?? ReadString(root, "lensModel")
+                    ?? ReadString(root, "lens"),
+                BatteryPercent = ReadPercent(root, "batteryPercent")
+                    ?? ReadPercent(root, "battery")
+                    ?? ReadPercent(root, "bat"),
                 ExposureProgram = ReadProp(root, "ep"),
                 FNumber = ReadProp(root, "fn"),
                 ShutterSpeed = ReadProp(root, "ss"),
@@ -58,6 +79,10 @@ public sealed class CrSdkShootingState
                 FocusMode = ReadProp(root, "fm"),
                 RemoteTouchEnable = ReadProp(root, "rtouch"),
                 DispMode = ReadProp(root, "dm"),
+                ImageQuality = ReadProp(root, "iq"),
+                ImageSize = ReadProp(root, "isz"),
+                AspectRatio = ReadProp(root, "ar"),
+                RawCompressionType = ReadProp(root, "rawc"),
                 ShutterType = ReadProp(root, "st"),
                 DriveMode = ReadProp(root, "drv"),
                 FlashMode = ReadProp(root, "flm"),
@@ -99,6 +124,25 @@ public sealed class CrSdkShootingState
             SetDataType = el.TryGetProperty("set", out var s) ? (CrSdkDataType)s.GetUInt32() : CrSdkDataType.Undefined,
             Candidates = cand,
         };
+    }
+
+    private static string? ReadString(JsonElement root, string name)
+    {
+        if (!root.TryGetProperty(name, out var el))
+            return null;
+        if (el.ValueKind != JsonValueKind.String)
+            return null;
+        var s = el.GetString();
+        return string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+    }
+
+    private static int? ReadPercent(JsonElement root, string name)
+    {
+        if (!root.TryGetProperty(name, out var el))
+            return null;
+        if (el.ValueKind != JsonValueKind.Number || !el.TryGetInt32(out var p))
+            return null;
+        return Math.Clamp(p, 0, 100);
     }
 
     /// <summary>

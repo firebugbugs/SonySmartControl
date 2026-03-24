@@ -54,6 +54,11 @@ public interface ICameraPreviewSession : IAsyncDisposable
     /// </summary>
     Task<SdCardUsageEstimate?> TryGetSdCardUsageEstimateAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// 读取最近一次 SD 容量估算的原始诊断文本（旧版 DLL 或不支持时为 null）。
+    /// </summary>
+    string? TryGetSdCardUsageDebugText() => null;
+
     Task DisconnectAsync();
 
     /// <summary>
