@@ -20,7 +20,7 @@
                 <Grid ColumnDefinitions="*,*"
                       Height="44">
                     <Border Classes="sidebar-mode-thumb"
-                            Width="137"
+                            Width="136"
                             HorizontalAlignment="Left"
                             VerticalAlignment="Stretch">
                         <Border.RenderTransform>

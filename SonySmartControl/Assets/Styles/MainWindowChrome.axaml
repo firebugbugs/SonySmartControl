@@ -27,13 +27,23 @@
         <Setter Property="CornerRadius" Value="6"/>
         <Setter Property="Foreground" Value="#5C6370"/>
     </Style>
+    <Style Selector="Button.chrome-caption-close /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="#EA4235"/>
+        <Setter Property="CornerRadius" Value="8"/>
+    </Style>
     <Style Selector="Button.chrome-caption-close:pointerover">
-        <Setter Property="Background" Value="#E81123"/>
+        <Setter Property="Background" Value="#BFEA4235"/>
         <Setter Property="Foreground" Value="#FFFFFF"/>
     </Style>
+    <Style Selector="Button.chrome-caption-close:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="#BFEA4235"/>
+    </Style>
     <Style Selector="Button.chrome-caption-close:pressed">
-        <Setter Property="Background" Value="#C50F1F"/>
+        <Setter Property="Background" Value="#A6EA4235"/>
         <Setter Property="Foreground" Value="#FFFFFF"/>
+    </Style>
+    <Style Selector="Button.chrome-caption-close:pressed /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="#A6EA4235"/>
     </Style>
 
     <Style Selector="Button.chrome-text">

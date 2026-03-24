@@ -1,9 +1,11 @@
+using System.Diagnostics;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
+using Avalonia.Visuals;
 using Avalonia.VisualTree;
 using Microsoft.Extensions.DependencyInjection;
 using SonySmartControl.Services.Platform;
@@ -112,8 +114,60 @@ public partial class MainWindow : Window
     private void ChromeMaximize_OnClick(object? sender, RoutedEventArgs e) =>
         ToggleMaximizeRestore();
 
-    private void ChromeClose_OnClick(object? sender, RoutedEventArgs e) =>
+    private void ChromeClose_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (CloseConfirmPopup != null)
+            CloseConfirmPopup.IsOpen = true;
+    }
+
+    private void CloseConfirmCancel_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (CloseConfirmPopup != null)
+            CloseConfirmPopup.IsOpen = false;
+    }
+
+    private void CloseConfirmAccept_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (CloseConfirmPopup != null)
+            CloseConfirmPopup.IsOpen = false;
         Close();
+    }
+
+    private async void CopyBilibiliId_OnClick(object? sender, RoutedEventArgs e) =>
+        await CopyTextToClipboardAsync("43096314");
+
+    private async void CopyQqGroup_OnClick(object? sender, RoutedEventArgs e) =>
+        await CopyTextToClipboardAsync("1094431427");
+
+    private async Task CopyTextToClipboardAsync(string text)
+    {
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel?.Clipboard == null)
+            return;
+        await topLevel.Clipboard.SetTextAsync(text);
+    }
+
+    private void OpenAuthorHomepage_OnClick(object? sender, RoutedEventArgs e)
+    {
+        const string homepageUrl = "https://www.cheems.online/";
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = homepageUrl,
+            UseShellExecute = true
+        });
+    }
+
+    private void AuthorInfoTrigger_OnPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (sender is not Visual visual || !IsLeftButtonPressed(e, visual))
+            return;
+        if (AuthorInfoPopup == null)
+            return;
+        if (sender is Control control)
+            AuthorInfoPopup.PlacementTarget = control;
+        AuthorInfoPopup.IsOpen = true;
+        e.Handled = true;
+    }
 
     private void ResizeNw_OnPointerPressed(object? sender, PointerPressedEventArgs e)
     {

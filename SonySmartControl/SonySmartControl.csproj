@@ -26,6 +26,7 @@
         <Folder Include="Models\" />
         <!-- 勿再写 AvaloniaResource Include="Assets\**"：SDK 已通过 AvaloniaXaml(**\*.axaml) 收录，重复会导致运行时「same key /Assets/...」崩溃 -->
         <AvaloniaResource Include="Assets\cheems.ico" />
+        <AvaloniaResource Include="Assets\Fonts\iconfont.ttf" />
     </ItemGroup>
 
     <ItemGroup>

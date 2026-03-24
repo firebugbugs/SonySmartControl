@@ -51,3 +51,7 @@ Build/
 # 忽略从Node.js生成的pdb文件
 *.pdb
 /项目文档
+
+*.cursorrules
+*.idea
+*.obsidian

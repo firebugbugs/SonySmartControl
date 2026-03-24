@@ -329,8 +329,8 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
 
     partial void OnRemoteSidebarModeChanged(int value)
     {
-        // 大切换按钮的滑块位移：左=0（拍照），右=137（摄影）。
-        RemoteSidebarThumbOffset = value == 1 ? 137d : 0d;
+        // 大切换按钮的滑块位移：左=0（拍照），右=136（摄影）。
+        RemoteSidebarThumbOffset = value == 1 ? 136d : 0d;
     }
 
     [RelayCommand]
