@@ -10,17 +10,27 @@ using Avalonia;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
+using Avalonia.Controls;
+using Avalonia.Input;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using SonySmartControl.Helpers;
 using SonySmartControl.Interop;
 using SonySmartControl.Services.Camera;
+using SonySmartControl.Services.Platform;
+using SonySmartControl.Services.Settings;
 using SonySmartControl.Settings;
 
 namespace SonySmartControl.ViewModels;
 
 public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
 {
+    private readonly IUserCameraSettingsService _userCameraSettings;
+    private readonly IFolderPickerService _folderPicker;
+    private readonly ICameraPreviewSessionFactory _cameraPreviewSessionFactory;
+    private readonly ISdCardMediaFormatService _sdCardMediaFormat;
+    private readonly ICrSdkShootingWriteService _crSdkShootingWrite;
+
     private readonly bool _persistEnabled;
 
     [ObservableProperty]
@@ -155,7 +165,6 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
 
     public bool ShootingPanelVisible => IsSessionActive;
 
-    public Func<Task<string?>>? PickTimelapseSaveFolderAsync { get; set; }
     public string CameraConnectionBadgeText =>
         IsConnecting ? "连接中" : IsSessionActive ? "已连接" : "未连接";
     public string CameraConnectionBadgeBackground =>
@@ -187,6 +196,9 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     [ObservableProperty] private bool _timelapseSectionExpanded = true;
     [ObservableProperty] private bool _showFormatSdCardConfirm;
 
+    /// <summary>已连接徽标弹出的相机操作浮层（与 <see cref="ToggleCameraActionsPopupCommand"/> 联动）。</summary>
+    [ObservableProperty] private bool _isConnectedActionsPopupOpen;
+
     // SD 卡容量/使用量（估算）：用于“格式化 SD 卡”浮窗里的进度条展示。
     [ObservableProperty] private bool _sdCardSlot1HasCard;
     [ObservableProperty] private string _sdCardSlot1SummaryText = "—";
@@ -202,11 +214,20 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsPhotoSidebarMode))]
     [NotifyPropertyChangedFor(nameof(IsVideoSidebarMode))]
+    [NotifyPropertyChangedFor(nameof(PhotoSidebarModeTextColor))]
+    [NotifyPropertyChangedFor(nameof(VideoSidebarModeTextColor))]
     private int _remoteSidebarMode;
+
+    [ObservableProperty]
+    private double _remoteSidebarThumbOffset;
 
     public bool IsPhotoSidebarMode => RemoteSidebarMode == 0;
 
     public bool IsVideoSidebarMode => RemoteSidebarMode == 1;
+
+    public string PhotoSidebarModeTextColor => IsPhotoSidebarMode ? "#FFFFFF" : "#4286F5";
+
+    public string VideoSidebarModeTextColor => IsVideoSidebarMode ? "#FFFFFF" : "#4286F5";
 
     private ICameraPreviewSession? _session;
     private Bitmap? _lastFrameOwner;
@@ -214,9 +235,21 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     private bool _sdCardUsageRefreshInFlight;
     private CancellationTokenSource? _sdCardUsageRefreshCts;
 
-    public MainWindowViewModel()
+    /// <summary>运行期由 DI 解析；依赖具体服务实现。</summary>
+    public MainWindowViewModel(
+        IUserCameraSettingsService userCameraSettings,
+        IFolderPickerService folderPicker,
+        ICameraPreviewSessionFactory cameraPreviewSessionFactory,
+        ISdCardMediaFormatService sdCardMediaFormat,
+        ICrSdkShootingWriteService crSdkShootingWrite)
     {
-        var s = UserCameraSettingsStore.Load();
+        _userCameraSettings = userCameraSettings;
+        _folderPicker = folderPicker;
+        _cameraPreviewSessionFactory = cameraPreviewSessionFactory;
+        _sdCardMediaFormat = sdCardMediaFormat;
+        _crSdkShootingWrite = crSdkShootingWrite;
+
+        var s = _userCameraSettings.Load();
         _persistEnabled = false;
         _saveDirectory = s.SaveDirectory;
         _captureFormatIndex = s.CaptureFormatIndex;
@@ -230,8 +263,41 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         RefreshRecentGalleryFromDisk();
     }
 
-    /// <summary>由主窗口在 Loaded 中注入，用于选择保存文件夹。</summary>
-    public Func<Task<string?>>? PickSaveFolderAsync { get; set; }
+    /// <summary>设计器与 MainWindow.axaml 预览用默认实现。</summary>
+    public MainWindowViewModel()
+        : this(
+            new UserCameraSettingsService(),
+            new AvaloniaFolderPickerService(new TopLevelProvider()),
+            new CrSdkCameraPreviewSessionFactory(),
+            new CrSdkSdCardMediaFormatService(),
+            new CrSdkShootingWriteService())
+    {
+    }
+
+    /// <summary>主窗口将左右方向键交给 ViewModel；在文本框内聚焦时不应抢键。</summary>
+    public bool TryHandleGalleryArrowNavigation(Key key, object? focusedElement)
+    {
+        if (key != Key.Left && key != Key.Right)
+            return false;
+        if (focusedElement is TextBox or ComboBox)
+            return false;
+        if (IsViewingLiveMonitor || string.IsNullOrEmpty(ViewingRecentPhotoPath))
+            return false;
+        var delta = key == Key.Left ? -1 : 1;
+        _ = NavigateRecentGalleryAsync(delta);
+        return true;
+    }
+
+    [RelayCommand]
+    private async Task ToggleCameraActionsPopupAsync()
+    {
+        IsConnectedActionsPopupOpen = !IsConnectedActionsPopupOpen;
+        if (IsConnectedActionsPopupOpen)
+        {
+            ShowFormatSdCardConfirm = false;
+            await RefreshSdCardUsageAsync().ConfigureAwait(true);
+        }
+    }
 
     [RelayCommand]
     private void ExpandAllSections()
@@ -261,18 +327,18 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     [RelayCommand]
     private void SelectVideoSidebarMode() => RemoteSidebarMode = 1;
 
+    partial void OnRemoteSidebarModeChanged(int value)
+    {
+        // 大切换按钮的滑块位移：左=0（拍照），右=137（摄影）。
+        RemoteSidebarThumbOffset = value == 1 ? 137d : 0d;
+    }
+
     [RelayCommand]
     private async Task BrowseSaveFolder()
     {
-        if (PickSaveFolderAsync == null)
-        {
-            StatusMessage = "无法打开文件夹选择器（视图未就绪）。";
-            return;
-        }
-
         try
         {
-            var path = await PickSaveFolderAsync().ConfigureAwait(true);
+            var path = await _folderPicker.PickFolderAsync("选择遥控拍摄保存目录").ConfigureAwait(true);
             if (!string.IsNullOrWhiteSpace(path))
                 SaveDirectory = path;
         }
@@ -313,15 +379,9 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     [RelayCommand]
     private async Task BrowseTimelapseSaveFolder()
     {
-        if (PickTimelapseSaveFolderAsync == null)
-        {
-            StatusMessage = "无法打开延时摄影目录选择器（视图未就绪）。";
-            return;
-        }
-
         try
         {
-            var path = await PickTimelapseSaveFolderAsync().ConfigureAwait(true);
+            var path = await _folderPicker.PickFolderAsync("选择延时摄影保存目录").ConfigureAwait(true);
             if (!string.IsNullOrWhiteSpace(path))
                 TimelapseSaveDirectory = path;
         }
@@ -1226,7 +1286,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     partial void OnSaveDirectoryChanged(string value)
     {
         if (_persistEnabled)
-            UserCameraSettingsStore.Save(ToSettings());
+            _userCameraSettings.Save(ToSettings());
         RefreshRecentGalleryFromDisk();
         ScheduleSyncSaveSettingsToCameraDebounced();
     }
@@ -1234,7 +1294,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     partial void OnTimelapseSaveDirectoryChanged(string value)
     {
         if (_persistEnabled)
-            UserCameraSettingsStore.Save(ToSettings());
+            _userCameraSettings.Save(ToSettings());
     }
 
     partial void OnTimelapseIntervalSecondsChanged(int value)
@@ -1244,7 +1304,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             TimelapseIntervalSeconds = minSeconds;
 
         if (_persistEnabled)
-            UserCameraSettingsStore.Save(ToSettings());
+            _userCameraSettings.Save(ToSettings());
     }
 
     partial void OnTimelapseTargetFramesChanged(int value)
@@ -1253,13 +1313,13 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             TimelapseTargetFrames = 0;
 
         if (_persistEnabled)
-            UserCameraSettingsStore.Save(ToSettings());
+            _userCameraSettings.Save(ToSettings());
     }
 
     partial void OnCaptureFormatIndexChanged(int value)
     {
         if (_persistEnabled)
-            UserCameraSettingsStore.Save(ToSettings());
+            _userCameraSettings.Save(ToSettings());
         if (IsSessionActive && _session != null)
             _ = PushCaptureFormatToCameraAsync();
     }
@@ -1285,21 +1345,21 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     partial void OnFileNamePrefixChanged(string value)
     {
         if (_persistEnabled)
-            UserCameraSettingsStore.Save(ToSettings());
+            _userCameraSettings.Save(ToSettings());
         ScheduleSyncSaveSettingsToCameraDebounced();
     }
 
     partial void OnShowHistogramChanged(bool value)
     {
         if (_persistEnabled)
-            UserCameraSettingsStore.Save(ToSettings());
+            _userCameraSettings.Save(ToSettings());
         OnPropertyChanged(nameof(IsHistogramOverlayVisible));
     }
 
     partial void OnGuideOverlayIndexChanged(int value)
     {
         if (_persistEnabled)
-            UserCameraSettingsStore.Save(ToSettings());
+            _userCameraSettings.Save(ToSettings());
         OnPropertyChanged(nameof(IsGuideOverlayVisible));
     }
 
@@ -1436,7 +1496,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         StatusMessage = "正在连接相机，请稍候…";
         ConnectedCameraModelName = "未知";
 
-        var session = new CrSdkCameraPreviewSession();
+        var session = _cameraPreviewSessionFactory.Create();
 
         session.FrameReceived += OnFrameReceived;
 
@@ -1694,44 +1754,12 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
 
         ShowFormatSdCardConfirm = false;
         StatusMessage = "正在格式化 SD 卡（SLOT1/2），请稍候…";
-        string? partialErrorText = null;
         try
         {
-            // 原生命令是同步调用，放到后台线程避免阻塞 UI。
-            await Task.Run(() =>
-            {
-                var errors = new List<string>();
-                var okCount = 0;
-                void TryOne(CrSdkCommandParam slotParam, string slotName)
-                {
-                    try
-                    {
-                        SonyCrSdk.SendCommand(CrSdkCommandIds.MediaFormat, slotParam);
-                        okCount++;
-                    }
-                    catch (Exception ex)
-                    {
-                        errors.Add($"{slotName} 失败：{ex.Message}");
-                    }
-                }
-
-                TryOne(CrSdkCommandParam.Up, "SLOT1");
-                TryOne(CrSdkCommandParam.Down, "SLOT2");
-
-                if (okCount > 0)
-                {
-                    if (errors.Count > 0)
-                        partialErrorText = string.Join("；", errors);
-                    return;
-                }
-
-                // 两个槽都失败：抛出去统一在 UI 线程写 StatusMessage
-                throw new InvalidOperationException(string.Join("；", errors));
-            }).ConfigureAwait(true);
-
-            StatusMessage = partialErrorText == null
+            var result = await _sdCardMediaFormat.FormatAllSlotsAsync().ConfigureAwait(true);
+            StatusMessage = result.PartialErrorText == null
                 ? "SD 卡格式化完成（如有需要请等待机身重建列表）。"
-                : "SD 卡格式化完成，但部分槽失败：" + partialErrorText;
+                : "SD 卡格式化完成，但部分槽失败：" + result.PartialErrorText;
         }
         catch (Exception ex)
         {

@@ -18,47 +18,46 @@
 
     <ItemGroup>
         <!-- UseWindowsForms 仅为 Clipboard；勿注入全局 using，避免与 Avalonia 类型冲突 -->
-        <Using Remove="System.Windows.Forms"/>
-        <Using Remove="System.Drawing"/>
+        <Using Remove="System.Windows.Forms" />
+        <Using Remove="System.Drawing" />
     </ItemGroup>
 
     <ItemGroup>
-        <Folder Include="Models\"/>
+        <Folder Include="Models\" />
         <!-- 勿再写 AvaloniaResource Include="Assets\**"：SDK 已通过 AvaloniaXaml(**\*.axaml) 收录，重复会导致运行时「same key /Assets/...」崩溃 -->
-        <AvaloniaResource Include="Assets\cheems.ico"/>
+        <AvaloniaResource Include="Assets\cheems.ico" />
     </ItemGroup>
 
     <ItemGroup>
-        <PackageReference Include="Avalonia" Version="11.3.10"/>
-        <PackageReference Include="Avalonia.Desktop" Version="11.3.10"/>
-        <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.10"/>
-        <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.10"/>
+        <PackageReference Include="Avalonia" Version="11.3.10" />
+        <PackageReference Include="Avalonia.Desktop" Version="11.3.10" />
+        <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.10" />
+        <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.10" />
         <!--Condition below is needed to remove Avalonia.Diagnostics package from build output in Release configuration.-->
         <PackageReference Include="Avalonia.Diagnostics" Version="11.3.10">
             <IncludeAssets Condition="'$(Configuration)' != 'Debug'">None</IncludeAssets>
             <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
         </PackageReference>
-        <PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.1"/>
-        <PackageReference Include="MetadataExtractor" Version="2.8.1"/>
+        <PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.1" />
+        <PackageReference Include="FluentAvaloniaUI" Version="2.5.0" />
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.0" />
+        <PackageReference Include="MetadataExtractor" Version="2.8.1" />
     </ItemGroup>
 
     <Target Name="WarnIfCrSdkLayoutMissing" BeforeTargets="Build">
-        <Warning
-            Text="未找到 $(SonyCrSdkRoot)\external\crsdk\Cr_Core.dll：请把官方 RemoteCli 解压到仓库根目录下的 CrSDK_* 文件夹，或在编译时传入 /p:SonyCrSdkRoot=... 。否则运行时无法加载 Cr_Core。"
-            Condition="!Exists('$(SonyCrSdkRoot)\external\crsdk\Cr_Core.dll')"/>
+        <Warning Text="未找到 $(SonyCrSdkRoot)\external\crsdk\Cr_Core.dll：请把官方 RemoteCli 解压到仓库根目录下的 CrSDK_* 文件夹，或在编译时传入 /p:SonyCrSdkRoot=... 。否则运行时无法加载 Cr_Core。" Condition="!Exists('$(SonyCrSdkRoot)\external\crsdk\Cr_Core.dll')" />
     </Target>
 
     <!-- 仅复制 CrSDK 运行所需 DLL（与官方 RemoteCli 示例一致），不复制 OpenCV 等 -->
-    <Target Name="CopySonyCrSdkNative" AfterTargets="Build"
-            Condition="Exists('$(SonyCrSdkRoot)\external\crsdk\Cr_Core.dll')">
+    <Target Name="CopySonyCrSdkNative" AfterTargets="Build" Condition="Exists('$(SonyCrSdkRoot)\external\crsdk\Cr_Core.dll')">
         <ItemGroup>
-            <_CrSdkRootDlls Include="$(SonyCrSdkRoot)\external\crsdk\Cr_Core.dll"/>
-            <_CrSdkRootDlls Include="$(SonyCrSdkRoot)\external\crsdk\monitor_protocol.dll"/>
-            <_CrSdkRootDlls Include="$(SonyCrSdkRoot)\external\crsdk\monitor_protocol_pf.dll"/>
-            <_CrSdkAdapterDlls Include="$(SonyCrSdkRoot)\external\crsdk\CrAdapter\*.dll"/>
+            <_CrSdkRootDlls Include="$(SonyCrSdkRoot)\external\crsdk\Cr_Core.dll" />
+            <_CrSdkRootDlls Include="$(SonyCrSdkRoot)\external\crsdk\monitor_protocol.dll" />
+            <_CrSdkRootDlls Include="$(SonyCrSdkRoot)\external\crsdk\monitor_protocol_pf.dll" />
+            <_CrSdkAdapterDlls Include="$(SonyCrSdkRoot)\external\crsdk\CrAdapter\*.dll" />
         </ItemGroup>
-        <Copy SourceFiles="@(_CrSdkRootDlls)" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true"/>
-        <Copy SourceFiles="@(_CrSdkAdapterDlls)" DestinationFolder="$(OutputPath)CrAdapter" SkipUnchangedFiles="true"/>
+        <Copy SourceFiles="@(_CrSdkRootDlls)" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" />
+        <Copy SourceFiles="@(_CrSdkAdapterDlls)" DestinationFolder="$(OutputPath)CrAdapter" SkipUnchangedFiles="true" />
     </Target>
 
     <!-- 在「主输出复制」之后拷桥接 DLL，避免 F5 时输出目录里还没有 SonyCrBridge.dll。优先级：ThirdParty > build\Release > ... -->
@@ -74,13 +73,10 @@
             <_SonyCrBridgeSrc Condition="'$(_SonyCrBridgeSrc)' == '' and Exists('$(MSBuildThisFileDirectory)..\native\SonyCrBridge\out\build\x64-Debug\SonyCrBridge.dll')">$(MSBuildThisFileDirectory)..\native\SonyCrBridge\out\build\x64-Debug\SonyCrBridge.dll</_SonyCrBridgeSrc>
             <_SonyCrBridgeSrc Condition="'$(_SonyCrBridgeSrc)' == '' and Exists('$(MSBuildThisFileDirectory)..\native\SonyCrBridge\build\SonyCrBridge.dll')">$(MSBuildThisFileDirectory)..\native\SonyCrBridge\build\SonyCrBridge.dll</_SonyCrBridgeSrc>
         </PropertyGroup>
-        <Copy SourceFiles="$(_SonyCrBridgeSrc)" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="false"
-              Condition="'$(_SonyCrBridgeSrc)' != ''"/>
+        <Copy SourceFiles="$(_SonyCrBridgeSrc)" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="false" Condition="'$(_SonyCrBridgeSrc)' != ''" />
     </Target>
 
     <Target Name="WarnIfNoSonyCrBridgeInOutput" AfterTargets="CopySonyCrBridgeDllToOutput">
-        <Warning
-            Text="未找到 $(OutputPath)SonyCrBridge.dll：请先编译 native\SonyCrBridge（执行 build-windows.ps1），再重新生成本工程。"
-            Condition="!Exists('$(OutputPath)SonyCrBridge.dll')"/>
+        <Warning Text="未找到 $(OutputPath)SonyCrBridge.dll：请先编译 native\SonyCrBridge（执行 build-windows.ps1），再重新生成本工程。" Condition="!Exists('$(OutputPath)SonyCrBridge.dll')" />
     </Target>
 </Project>

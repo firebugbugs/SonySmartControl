@@ -1,6 +1,8 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="using:SonySmartControl.Controls"
              x:Class="SonySmartControl.Controls.FilmstripPhotosHost"
+             x:DataType="controls:FilmstripPhotosHost"
              Focusable="False">
     <Grid x:Name="RootHost" Background="Transparent">
         <ScrollViewer x:Name="ScrollHost"

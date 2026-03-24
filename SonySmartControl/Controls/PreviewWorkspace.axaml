@@ -1,0 +1,123 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:SonySmartControl.ViewModels"
+             xmlns:controls="using:SonySmartControl.Controls"
+             xmlns:behaviors="using:SonySmartControl.Behaviors"
+             x:Class="SonySmartControl.Controls.PreviewWorkspace"
+             x:DataType="vm:MainWindowViewModel">
+    <Grid MinHeight="0">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="4*" MinHeight="220"/>
+            <RowDefinition Height="6"/>
+            <RowDefinition Height="1.2*" MinHeight="110"/>
+        </Grid.RowDefinitions>
+
+        <Border x:Name="PreviewBorder"
+                Grid.Row="0"
+                Background="Transparent"
+                BorderBrush="#D0D5DE" BorderThickness="1" CornerRadius="12" ClipToBounds="True"
+                behaviors:PreviewLayoutSyncBehavior.IsLayoutSyncEnabled="True">
+            <Grid>
+                <Border Background="Transparent"
+                        ClipToBounds="True"
+                        IsVisible="{Binding IsLivePreviewVisible}"
+                        behaviors:PreviewFocusGestureBehavior.IsPreviewGestureEnabled="True"
+                        Cursor="Hand"
+                        ToolTip.Tip="在预览上按下并按住：选对焦点并半按对焦；松开以释放。机身对焦框右上角可取消遥控触摸区域。">
+                    <Grid Background="Transparent" ClipToBounds="True">
+                        <Image Source="{Binding PreviewImage}" Stretch="Uniform" IsHitTestVisible="False"/>
+                        <controls:CompositionGuideOverlay ModeIndex="{Binding GuideOverlayIndex}"
+                                                          SourceImage="{Binding PreviewImage}"
+                                                          IsVisible="{Binding IsGuideOverlayVisible}"/>
+                        <controls:LuminanceHistogramOverlay SourceImage="{Binding PreviewImage}"
+                                                            Bins="{Binding LuminanceHistogramBins}"
+                                                            IsVisible="{Binding IsHistogramOverlayVisible}"/>
+                        <controls:AfFocusFramesOverlay SourceImage="{Binding PreviewImage}"
+                                                       Frames="{Binding SdkAfFocusFrames}"
+                                                       IsVisible="{Binding IsSdkAfFramesOverlayVisible}"/>
+                        <Button HorizontalAlignment="Left"
+                                VerticalAlignment="Top"
+                                Margin="{Binding FocusReticleCloseMargin}"
+                                Width="22" Height="22"
+                                Padding="0"
+                                Background="#DC202020"
+                                BorderThickness="0"
+                                CornerRadius="11"
+                                Cursor="Hand"
+                                IsVisible="{Binding IsFocusReticleCloseButtonVisible}"
+                                Command="{Binding DismissPreviewTouchFocusCommand}"
+                                ToolTip.Tip="取消触摸对焦点，机身恢复自动对焦区域">
+                            <TextBlock Text="×"
+                                       FontSize="15"
+                                       Foreground="White"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"/>
+                        </Button>
+                    </Grid>
+                </Border>
+                <controls:PhotoPanZoomViewer IsVisible="{Binding IsStaticReviewVisible}"
+                                             Source="{Binding StaticReviewImage}"/>
+            </Grid>
+        </Border>
+
+        <GridSplitter Grid.Row="1"
+                      Height="6"
+                      Margin="16,0,16,0"
+                      HorizontalAlignment="Stretch"
+                      VerticalAlignment="Stretch"
+                      ResizeDirection="Rows"
+                      ResizeBehavior="PreviousAndNext"
+                      Cursor="SizeNorthSouth"
+                      Background="#01000000"
+                      BorderThickness="0"/>
+
+        <Border x:Name="RecentFilmstripBar"
+                Grid.Row="2"
+                CornerRadius="12"
+                Background="#FFFFFF"
+                BorderBrush="#D9DEE8"
+                BorderThickness="1"
+                Padding="12,10"
+                ClipToBounds="True"
+                BoxShadow="0 2 8 0 #12000000"
+                behaviors:FilmstripBarWheelBehavior.IsFilmstripWheelEnabled="True">
+            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+                <StackPanel Grid.Column="0"
+                            Width="126"
+                            VerticalAlignment="Center">
+                    <Panel Height="96">
+                        <Border CornerRadius="8"
+                                Background="#EEF1F6"
+                                VerticalAlignment="Stretch"
+                                HorizontalAlignment="Stretch"/>
+                        <Border CornerRadius="8"
+                                IsVisible="{Binding IsViewingLiveMonitor}"
+                                Background="#D4E8FC"
+                                VerticalAlignment="Stretch"
+                                HorizontalAlignment="Stretch"/>
+                        <Button Classes="filmstrip-tile"
+                                Height="96"
+                                HorizontalAlignment="Stretch"
+                                VerticalAlignment="Stretch"
+                                Focusable="False"
+                                Command="{Binding ShowLiveMonitorCommand}"
+                                ToolTip.Tip="返回实时取景">
+                            <TextBlock Text="实时"
+                                       FontWeight="SemiBold"
+                                       Foreground="#1E3A5F"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"/>
+                        </Button>
+                    </Panel>
+                </StackPanel>
+
+                <controls:FilmstripPhotosHost x:Name="FilmstripPhotos"
+                                              Grid.Column="1"
+                                              behaviors:FilmstripHostWidthSyncBehavior.IsWidthSyncEnabled="True"
+                                              ItemsSource="{Binding RecentPhotos}"
+                                              SelectCommand="{Binding ShowRecentPhotoCommand}"
+                                              DeleteCommand="{Binding DeletePreviewImageCommand}"/>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

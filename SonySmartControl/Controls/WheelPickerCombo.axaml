@@ -1,6 +1,8 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="using:SonySmartControl.Controls"
              x:Class="SonySmartControl.Controls.WheelPickerCombo"
+             x:DataType="controls:WheelPickerCombo"
              HorizontalAlignment="Stretch"
              MinHeight="32">
     <!-- 不透明底色（避免 DynamicResource 在部分主题下接近透明） -->

@@ -1,0 +1,411 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:SonySmartControl.ViewModels"
+             xmlns:controls="using:SonySmartControl.Controls"
+             xmlns:behaviors="using:SonySmartControl.Behaviors"
+             xmlns:interop="using:SonySmartControl.Interop"
+             x:Class="SonySmartControl.Controls.RemoteSidebarPanel"
+             x:DataType="vm:MainWindowViewModel">
+    <Border MinHeight="0"
+            VerticalAlignment="Stretch"
+            CornerRadius="12"
+            Background="Transparent"
+            Padding="0"
+            ClipToBounds="False">
+        <Grid RowDefinitions="Auto,*">
+            <Border Grid.Row="0"
+                    HorizontalAlignment="Center"
+                    Width="280"
+                    Classes="sidebar-mode-switch">
+                <Grid ColumnDefinitions="*,*"
+                      Height="44">
+                    <Border Classes="sidebar-mode-thumb"
+                            Width="137"
+                            HorizontalAlignment="Left"
+                            VerticalAlignment="Stretch">
+                        <Border.RenderTransform>
+                            <TranslateTransform X="{Binding RemoteSidebarThumbOffset}">
+                                <TranslateTransform.Transitions>
+                                    <Transitions>
+                                        <DoubleTransition Property="X"
+                                                          Duration="0:0:0.24"
+                                                          Easing="CubicEaseOut"/>
+                                    </Transitions>
+                                </TranslateTransform.Transitions>
+                            </TranslateTransform>
+                        </Border.RenderTransform>
+                    </Border>
+
+                    <Button Grid.Column="0"
+                            Classes="sidebar-mode-option"
+                            Content="拍照"
+                            Foreground="{Binding PhotoSidebarModeTextColor}"
+                            Command="{Binding SelectPhotoSidebarModeCommand}"/>
+                    <Button Grid.Column="1"
+                            Classes="sidebar-mode-option"
+                            Content="摄影"
+                            Foreground="{Binding VideoSidebarModeTextColor}"
+                            Command="{Binding SelectVideoSidebarModeCommand}"/>
+                </Grid>
+            </Border>
+
+            <Grid Grid.Row="1"
+                  MinHeight="0">
+                <Panel Margin="8,8,8,8">
+                    <Grid RowDefinitions="Auto,Auto,*" RowSpacing="10" IsVisible="{Binding IsPhotoSidebarMode}" MinHeight="0">
+                        <StackPanel Grid.Row="0" Spacing="8">
+                            <TextBlock FontWeight="SemiBold" Foreground="#1F2430" Text="遥控拍摄"/>
+                            <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                                <Button Grid.Column="0"
+                                        x:Name="FocusHoldButton"
+                                        Classes="camera-focus"
+                                        Content="对焦"
+                                        IsEnabled="{Binding ShutterActionButtonsEnabled}"
+                                        HorizontalAlignment="Stretch"
+                                        HorizontalContentAlignment="Center"
+                                        behaviors:FocusHoldButtonBehavior.IsFocusHoldEnabled="True"
+                                        ToolTip.Tip="可选：与在预览上按住相同（半按对焦，松开释放）。未在预览选点时则为普通半按。"/>
+                                <Button Grid.Column="1"
+                                        x:Name="CaptureHoldButton"
+                                        Classes="camera-capture"
+                                        Content="拍照"
+                                        IsEnabled="{Binding ShutterActionButtonsEnabled}"
+                                        HorizontalAlignment="Stretch"
+                                        HorizontalContentAlignment="Center"
+                                        behaviors:CaptureHoldButtonBehavior.IsCaptureHoldEnabled="True"
+                                        ToolTip.Tip="单张/延时：按住半按对焦，松开释放快门一次。连拍模式：按住后半按对焦再全按连拍，保持按住可持续连拍，松手停止。保存路径与格式在侧栏「保存设置」中修改后立即生效。"/>
+                            </Grid>
+                        </StackPanel>
+
+                        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="4">
+                            <Button Classes="sidebar-icon-tool"
+                                    Command="{Binding ExpandAllSectionsCommand}"
+                                    ToolTip.Tip="全部展开">
+                                <Path Width="18" Height="18" Stretch="Uniform"
+                                      Stroke="#666666" StrokeThickness="1.65"
+                                      Data="M 2 3 L 10 11 L 18 3 M 2 9 L 10 17 L 18 9"/>
+                            </Button>
+                            <Button Classes="sidebar-icon-tool"
+                                    Command="{Binding CollapseAllSectionsCommand}"
+                                    ToolTip.Tip="全部收起">
+                                <Path Width="18" Height="18" Stretch="Uniform"
+                                      Stroke="#666666" StrokeThickness="1.65"
+                                      Data="M 2 15 L 10 7 L 18 15 M 2 9 L 10 1 L 18 9"/>
+                            </Button>
+                        </StackPanel>
+
+                        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" ClipToBounds="False">
+                            <StackPanel Spacing="10">
+                                <Expander IsExpanded="{Binding SaveSectionExpanded, Mode=TwoWay}"
+                                          HorizontalAlignment="Stretch"
+                                          HorizontalContentAlignment="Stretch">
+                                    <Expander.Header>
+                                        <TextBlock FontWeight="SemiBold"
+                                                   Text="保存设置"
+                                                   VerticalAlignment="Center"/>
+                                    </Expander.Header>
+                                    <StackPanel Spacing="10" Margin="0,4,0,0">
+                                        <TextBlock Text="保存目录"/>
+                                        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                                            <TextBox Grid.Column="0" Text="{Binding SaveDirectory}" Watermark="文件夹路径"/>
+                                            <Button Grid.Column="1"
+                                                    Classes="chrome-text"
+                                                    Content="浏览…"
+                                                    Command="{Binding BrowseSaveFolderCommand}"
+                                                    Padding="12,6"/>
+                                            <Button Grid.Column="2"
+                                                    Classes="chrome-text"
+                                                    Content="打开"
+                                                    Command="{Binding OpenSaveFolderCommand}"
+                                                    Padding="12,6"
+                                                    ToolTip.Tip="在文件资源管理器中打开此文件夹"/>
+                                        </Grid>
+
+                                        <TextBlock Text="文件名前缀"/>
+                                        <TextBox Text="{Binding FileNamePrefix}" Watermark="例如 DSC"/>
+
+                                        <TextBlock Text="保存格式"/>
+                                        <ComboBox SelectedIndex="{Binding CaptureFormatIndex}">
+                                            <ComboBoxItem Content="JPEG"/>
+                                            <ComboBoxItem Content="RAW"/>
+                                            <ComboBoxItem Content="RAW + JPEG"/>
+                                        </ComboBox>
+                                    </StackPanel>
+                                </Expander>
+
+                                <Border IsVisible="{Binding ShootingPanelVisible}"
+                                        Opacity="{Binding ShootingPanelOpacity}"
+                                        Padding="0,4,0,0">
+                                    <StackPanel Spacing="10">
+                                        <Expander IsExpanded="{Binding ExposureSectionExpanded, Mode=TwoWay}"
+                                                  HorizontalAlignment="Stretch"
+                                                  HorizontalContentAlignment="Stretch">
+                                            <Expander.Header>
+                                                <TextBlock FontWeight="SemiBold"
+                                                           Text="拍照设置"
+                                                           VerticalAlignment="Center"/>
+                                            </Expander.Header>
+                                            <StackPanel Spacing="8" Margin="0,4,0,0">
+                                                <TextBlock Text="对焦模式"
+                                                           ToolTip.Tip="若下拉为灰色：机身须允许从电脑改写（Writable）；AF/MF 开关在镜头或菜单上、部分模式会锁定对焦。"/>
+                                                <controls:WheelPickerCombo ItemsSource="{Binding FocusModeChoices}"
+                                                                           SelectedIndex="{Binding SelectedFocusModeIndex, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                                           IsEnabled="{Binding FocusModeEnabled}"/>
+
+                                                <TextBlock Text="拍摄方式"
+                                                           ToolTip.Tip="单张 / 连拍 / 延时自拍，对应机身驱动模式（CrDeviceProperty_DriveMode）。连拍与延时下可选具体速度或秒数。"/>
+                                                <ComboBox MinHeight="32"
+                                                          HorizontalAlignment="Stretch"
+                                                          ItemsSource="{Binding DriveModeCategoryLabels}"
+                                                          SelectedIndex="{Binding SelectedDriveCategoryIndex, Mode=TwoWay}"
+                                                          IsEnabled="{Binding DriveModeCategoryEnabled}"
+                                                          behaviors:ComboBoxWheelToParentScrollBehavior.IsWheelToParentScrollEnabled="True"/>
+                                                <TextBlock Text="{Binding DriveModeSubLabel}"
+                                                           IsVisible="{Binding DriveModeSubRowVisible}"/>
+                                                <ComboBox MinHeight="32"
+                                                          HorizontalAlignment="Stretch"
+                                                          ItemsSource="{Binding DriveModeSubChoices}"
+                                                          SelectedIndex="{Binding SelectedDriveSubIndex, Mode=TwoWay}"
+                                                          IsVisible="{Binding DriveModeSubRowVisible}"
+                                                          IsEnabled="{Binding DriveModeCategoryEnabled}"
+                                                          behaviors:ComboBoxWheelToParentScrollBehavior.IsWheelToParentScrollEnabled="True">
+                                                    <ComboBox.ItemTemplate>
+                                                        <DataTemplate x:DataType="interop:ShootingChoiceItem">
+                                                            <TextBlock Text="{Binding Display}"/>
+                                                        </DataTemplate>
+                                                    </ComboBox.ItemTemplate>
+                                                </ComboBox>
+                                                <TextBlock Text="{Binding DriveModeOtherHint}"
+                                                           TextWrapping="Wrap"
+                                                           FontSize="11"
+                                                           Opacity="0.85"
+                                                           Foreground="#666666"
+                                                           IsVisible="{Binding HasDriveModeOtherHint}"/>
+
+                                                <TextBlock Text="曝光模式（P/A/S/M 等）"/>
+                                                <controls:WheelPickerCombo ItemsSource="{Binding ExposureModeChoices}"
+                                                                           SelectedIndex="{Binding SelectedExposureModeIndex, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                                           IsEnabled="{Binding ExposureModeEnabled}"/>
+
+                                                <TextBlock Text="光圈"/>
+                                                <controls:WheelPickerCombo ItemsSource="{Binding ApertureChoices}"
+                                                                           SelectedIndex="{Binding SelectedApertureIndex, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                                           IsEnabled="{Binding ApertureEnabled}"
+                                                                           WheelAdjustEnabled="True"/>
+
+                                                <TextBlock Text="快门类型"
+                                                           ToolTip.Tip="自动 / 机械快门 / 电子快门（CrDeviceProperty_ShutterType）。不支持或不可调时机身为灰色。"/>
+                                                <ComboBox MinHeight="32"
+                                                          HorizontalAlignment="Stretch"
+                                                          ItemsSource="{Binding ShutterTypeChoices}"
+                                                          SelectedIndex="{Binding SelectedShutterTypeIndex, Mode=TwoWay}"
+                                                          IsEnabled="{Binding ShutterTypeEnabled}"
+                                                          behaviors:ComboBoxWheelToParentScrollBehavior.IsWheelToParentScrollEnabled="True">
+                                                    <ComboBox.ItemTemplate>
+                                                        <DataTemplate x:DataType="interop:ShootingChoiceItem">
+                                                            <TextBlock Text="{Binding Display}"/>
+                                                        </DataTemplate>
+                                                    </ComboBox.ItemTemplate>
+                                                </ComboBox>
+
+                                                <TextBlock Text="快门速度"/>
+                                                <ComboBox x:Name="ShutterSpeedCombo"
+                                                          MinHeight="32"
+                                                          HorizontalAlignment="Stretch"
+                                                          ItemsSource="{Binding ShutterChoices}"
+                                                          SelectedIndex="{Binding SelectedShutterIndex, Mode=TwoWay}"
+                                                          IsEnabled="{Binding ShutterEnabled}"
+                                                          behaviors:ComboBoxWheelToParentScrollBehavior.IsWheelToParentScrollEnabled="True">
+                                                    <ComboBox.ItemTemplate>
+                                                        <DataTemplate x:DataType="interop:ShootingChoiceItem">
+                                                            <TextBlock Text="{Binding Display}"/>
+                                                        </DataTemplate>
+                                                    </ComboBox.ItemTemplate>
+                                                </ComboBox>
+
+                                                <TextBlock Text="ISO"/>
+                                                <controls:WheelPickerCombo ItemsSource="{Binding IsoChoices}"
+                                                                           SelectedIndex="{Binding SelectedIsoIndex, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                                           IsEnabled="{Binding IsoEnabled}"
+                                                                           WheelAdjustEnabled="True"/>
+
+                                                <TextBlock Text="曝光补偿"
+                                                           ToolTip.Tip="与机身曝光补偿（±EV）一致；数值为 SDK 的「EV×1000」。下拉选择；或在本框悬停约 0.75s 后用滚轮微调（与光圈/快门/ISO 相同）。"/>
+                                                <controls:WheelPickerCombo ItemsSource="{Binding ExposureBiasChoices}"
+                                                                           SelectedIndex="{Binding SelectedExposureBiasIndex, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                                           IsEnabled="{Binding ExposureBiasEnabled}"
+                                                                           InvertWheel="True"
+                                                                           WheelAdjustEnabled="True"/>
+                                                <TextBlock Text="{Binding ExposureCompensationHint}"
+                                                           TextWrapping="Wrap"
+                                                           FontSize="11"
+                                                           Opacity="0.85"
+                                                           Foreground="#B06020"
+                                                           IsVisible="{Binding HasExposureCompensationHint}"/>
+                                            </StackPanel>
+                                        </Expander>
+
+                                        <Expander IsExpanded="{Binding FlashSectionExpanded, Mode=TwoWay}"
+                                                  HorizontalAlignment="Stretch"
+                                                  HorizontalContentAlignment="Stretch">
+                                            <Expander.Header>
+                                                <TextBlock FontWeight="SemiBold"
+                                                           Text="闪光灯设置"
+                                                           VerticalAlignment="Center"/>
+                                            </Expander.Header>
+                                            <StackPanel Spacing="8" Margin="0,4,0,0">
+                                                <TextBlock Text="闪光模式"
+                                                           ToolTip.Tip="自动、关闭、强制闪光、慢速/后帘同步等；实际可选项由机身返回。"/>
+                                                <ComboBox MinHeight="32"
+                                                          HorizontalAlignment="Stretch"
+                                                          ItemsSource="{Binding FlashModeChoices}"
+                                                          SelectedIndex="{Binding SelectedFlashModeIndex, Mode=TwoWay}"
+                                                          IsEnabled="{Binding FlashModeEnabled}"
+                                                          behaviors:ComboBoxWheelToParentScrollBehavior.IsWheelToParentScrollEnabled="True">
+                                                    <ComboBox.ItemTemplate>
+                                                        <DataTemplate x:DataType="interop:ShootingChoiceItem">
+                                                            <TextBlock Text="{Binding Display}"/>
+                                                        </DataTemplate>
+                                                    </ComboBox.ItemTemplate>
+                                                </ComboBox>
+
+                                                <TextBlock Text="闪光补偿"/>
+                                                <controls:WheelPickerCombo ItemsSource="{Binding FlashCompensationChoices}"
+                                                                           SelectedIndex="{Binding SelectedFlashCompensationIndex, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                                           IsEnabled="{Binding FlashCompensationEnabled}"
+                                                                           InvertWheel="True"
+                                                                           WheelAdjustEnabled="True"/>
+                                            </StackPanel>
+                                        </Expander>
+                                    </StackPanel>
+                                </Border>
+
+                                <Expander IsExpanded="{Binding AuxDisplaySectionExpanded, Mode=TwoWay}"
+                                          HorizontalAlignment="Stretch"
+                                          HorizontalContentAlignment="Stretch">
+                                    <Expander.Header>
+                                        <TextBlock FontWeight="SemiBold"
+                                                   Text="辅助显示"
+                                                   VerticalAlignment="Center"/>
+                                    </Expander.Header>
+                                    <StackPanel Spacing="8" Margin="0,4,0,0">
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                            <TextBlock Grid.Column="0"
+                                                       VerticalAlignment="Center"
+                                                       TextWrapping="Wrap"
+                                                       Text="直方图"
+                                                       ToolTip.Tip="关闭后不显示右上角亮度直方图。"/>
+                                            <ToggleSwitch Grid.Column="1"
+                                                          VerticalAlignment="Center"
+                                                          OnContent="开"
+                                                          OffContent="关"
+                                                          IsChecked="{Binding ShowHistogram, Mode=TwoWay}"/>
+                                        </Grid>
+
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                            <TextBlock Grid.Column="0"
+                                                       VerticalAlignment="Center"
+                                                       TextWrapping="Wrap"
+                                                       Text="辅助线"
+                                                       ToolTip.Tip="在预览画面有效区域内叠加构图参考线。"/>
+                                            <controls:WheelPickerCombo Grid.Column="1"
+                                                                       MinWidth="168"
+                                                                       ItemsSource="{Binding GuideOverlayChoices}"
+                                                                       SelectedIndex="{Binding GuideOverlayIndex, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                        </Grid>
+                                    </StackPanel>
+                                </Expander>
+
+                                <Expander IsExpanded="{Binding TimelapseSectionExpanded, Mode=TwoWay}"
+                                          HorizontalAlignment="Stretch"
+                                          HorizontalContentAlignment="Stretch">
+                                    <Expander.Header>
+                                        <TextBlock FontWeight="SemiBold"
+                                                   Text="延时摄影"
+                                                   VerticalAlignment="Center"/>
+                                    </Expander.Header>
+                                    <StackPanel Spacing="8" Margin="0,4,0,0">
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                            <TextBlock Grid.Column="0"
+                                                       VerticalAlignment="Center"
+                                                       TextWrapping="Wrap"
+                                                       Text="间隔（秒）"
+                                                       ToolTip.Tip="C# 定时器实现；最低间隔 2 秒，实际周期会因拍照与传输耗时而略长。"/>
+                                            <TextBox Grid.Column="1"
+                                                     MinWidth="80"
+                                                     Text="{Binding TimelapseIntervalSeconds, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                        </Grid>
+
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                            <TextBlock Grid.Column="0"
+                                                       VerticalAlignment="Center"
+                                                       TextWrapping="Wrap"
+                                                       Text="总张数（0=无限制）"
+                                                       ToolTip.Tip="如果填写 0，将持续拍摄直到你点“停止”。"/>
+                                            <TextBox Grid.Column="1"
+                                                     MinWidth="80"
+                                                     Text="{Binding TimelapseTargetFrames, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                        </Grid>
+
+                                        <TextBlock Text="{Binding TimelapseProgressText}"
+                                                   Foreground="#6B7280"/>
+
+                                        <TextBlock Text="保存目录"
+                                                   ToolTip.Tip="延时摄影单独保存到此文件夹（与遥控拍摄目录独立）。"/>
+                                        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                                            <TextBox Grid.Column="0"
+                                                     Text="{Binding TimelapseSaveDirectory}"
+                                                     Watermark="延时摄影文件夹路径"/>
+                                            <Button Grid.Column="1"
+                                                    Classes="chrome-text"
+                                                    Content="浏览…"
+                                                    Command="{Binding BrowseTimelapseSaveFolderCommand}"
+                                                    Padding="12,6"/>
+                                            <Button Grid.Column="2"
+                                                    Classes="chrome-text"
+                                                    Content="打开"
+                                                    Command="{Binding OpenTimelapseSaveFolderCommand}"
+                                                    Padding="12,6"
+                                                    ToolTip.Tip="在文件资源管理器中打开此文件夹"/>
+                                        </Grid>
+
+                                        <StackPanel Orientation="Horizontal" Spacing="10">
+                                            <Button Classes="chrome-text"
+                                                    Content="开始"
+                                                    Command="{Binding StartTimelapseCommand}"
+                                                    Padding="14,6"/>
+                                            <Button Classes="chrome-text"
+                                                    Content="暂停"
+                                                    Command="{Binding PauseTimelapseCommand}"
+                                                    Padding="14,6"/>
+                                            <Button Classes="chrome-text"
+                                                    Content="继续"
+                                                    Command="{Binding ContinueTimelapseCommand}"
+                                                    Padding="14,6"/>
+                                            <Button Classes="chrome-text"
+                                                    Content="停止"
+                                                    Command="{Binding StopTimelapseCommand}"
+                                                    Padding="14,6"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Expander>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Grid>
+                    <Border Padding="24"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            VerticalAlignment="Stretch"
+                            HorizontalAlignment="Stretch"
+                            IsVisible="{Binding IsVideoSidebarMode}">
+                        <TextBlock Text="开发中"
+                                   FontSize="15"
+                                   Foreground="#6B7280"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"/>
+                    </Border>
+                </Panel>
+            </Grid>
+        </Grid>
+    </Border>
+</UserControl>

@@ -24,6 +24,9 @@ public interface ICameraPreviewSession : IAsyncDisposable
 {
     event EventHandler<Bitmap>? FrameReceived;
 
+    /// <summary>连接成功后的机身型号；未连接或未枚举到时为 null。</summary>
+    string? ConnectedCameraModel { get; }
+
     Task ConnectAsync(CancellationToken cancellationToken = default);
 
     /// <summary>

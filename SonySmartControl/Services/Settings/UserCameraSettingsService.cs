@@ -1,9 +1,12 @@
 using System.Text.Json;
+using SonySmartControl.Settings;
 
-namespace SonySmartControl.Settings;
+namespace SonySmartControl.Services.Settings;
 
-/// <summary>将 <see cref="CameraUserSettings"/> 读写至本地（%LocalAppData%\SonySmartControl）。</summary>
-public static class UserCameraSettingsStore
+/// <summary>
+/// 用户相机设置持久化（%LocalAppData%\SonySmartControl），无全局静态门面，符合构造函数注入与可测试替换。
+/// </summary>
+public sealed class UserCameraSettingsService : IUserCameraSettingsService
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -17,7 +20,7 @@ public static class UserCameraSettingsStore
             "SonySmartControl",
             "camera_user_settings.json");
 
-    public static CameraUserSettings Load()
+    public CameraUserSettings Load()
     {
         try
         {
@@ -34,7 +37,7 @@ public static class UserCameraSettingsStore
         }
     }
 
-    public static void Save(CameraUserSettings settings)
+    public void Save(CameraUserSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
         try

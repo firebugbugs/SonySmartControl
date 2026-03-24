@@ -514,7 +514,7 @@ public partial class MainWindowViewModel
                 mode = (byte)CrSdkDispMode.MonitorOff;
             }
 
-            SonyCrSdk.ApplyMonitorDispMode(mode);
+            _crSdkShootingWrite.ApplyMonitorDispMode(mode);
         }
         catch (Exception ex)
         {
@@ -819,7 +819,7 @@ public partial class MainWindowViewModel
         try
         {
             var dt = snap.SetDataType != CrSdkDataType.Undefined ? snap.SetDataType : CrSdkDataType.UInt32Array;
-            SonyCrSdk.SetShootingProperty(CrSdkDevicePropertyCodes.DriveMode, raw, dt);
+            _crSdkShootingWrite.SetShootingProperty(CrSdkDevicePropertyCodes.DriveMode, raw, dt);
         }
         catch (Exception ex)
         {
@@ -1093,7 +1093,7 @@ public partial class MainWindowViewModel
         MarkUserShootingEdit(ref _shootingPollSuppressEpUtc);
         try
         {
-            SonyCrSdk.SetShootingProperty(
+            _crSdkShootingWrite.SetShootingProperty(
                 CrSdkDevicePropertyCodes.ExposureProgramMode,
                 ExposureModeChoices[value].Value,
                 _lastShootingState.ExposureProgram.SetDataType);
@@ -1111,7 +1111,7 @@ public partial class MainWindowViewModel
         MarkUserShootingEdit(ref _shootingPollSuppressFnUtc);
         try
         {
-            SonyCrSdk.SetShootingProperty(
+            _crSdkShootingWrite.SetShootingProperty(
                 CrSdkDevicePropertyCodes.FNumber,
                 ApertureChoices[value].Value,
                 _lastShootingState.FNumber.SetDataType);
@@ -1129,7 +1129,7 @@ public partial class MainWindowViewModel
         MarkUserShootingEdit(ref _shootingPollSuppressSsUtc);
         try
         {
-            SonyCrSdk.SetShootingProperty(
+            _crSdkShootingWrite.SetShootingProperty(
                 CrSdkDevicePropertyCodes.ShutterSpeed,
                 ShutterChoices[value].Value,
                 _lastShootingState.ShutterSpeed.SetDataType);
@@ -1147,7 +1147,7 @@ public partial class MainWindowViewModel
         MarkUserShootingEdit(ref _shootingPollSuppressStUtc);
         try
         {
-            SonyCrSdk.SetShootingProperty(
+            _crSdkShootingWrite.SetShootingProperty(
                 CrSdkDevicePropertyCodes.ShutterType,
                 ShutterTypeChoices[value].Value,
                 _lastShootingState.ShutterType.SetDataType != CrSdkDataType.Undefined
@@ -1167,7 +1167,7 @@ public partial class MainWindowViewModel
         MarkUserShootingEdit(ref _shootingPollSuppressIsoUtc);
         try
         {
-            SonyCrSdk.SetShootingProperty(
+            _crSdkShootingWrite.SetShootingProperty(
                 CrSdkDevicePropertyCodes.IsoSensitivity,
                 IsoChoices[value].Value,
                 _lastShootingState.Iso.SetDataType);
@@ -1185,7 +1185,7 @@ public partial class MainWindowViewModel
         MarkUserShootingEdit(ref _shootingPollSuppressEvUtc);
         try
         {
-            SonyCrSdk.SetShootingProperty(
+            _crSdkShootingWrite.SetShootingProperty(
                 CrSdkDevicePropertyCodes.ExposureBiasCompensation,
                 ExposureBiasChoices[value].Value,
                 _lastShootingState.ExposureBias.SetDataType);
@@ -1206,7 +1206,7 @@ public partial class MainWindowViewModel
             var dt = _lastShootingState.FocusMode.SetDataType;
             if (dt == CrSdkDataType.Undefined)
                 dt = CrSdkDataType.UInt16Array;
-            SonyCrSdk.SetShootingProperty(
+            _crSdkShootingWrite.SetShootingProperty(
                 CrSdkDevicePropertyCodes.FocusMode,
                 NormalizeFocusModeRaw(FocusModeChoices[value].Value),
                 dt);
@@ -1224,7 +1224,7 @@ public partial class MainWindowViewModel
         MarkUserShootingEdit(ref _shootingPollSuppressFlmUtc);
         try
         {
-            SonyCrSdk.SetShootingProperty(
+            _crSdkShootingWrite.SetShootingProperty(
                 CrSdkDevicePropertyCodes.FlashMode,
                 FlashModeChoices[value].Value,
                 _lastShootingState.FlashMode.SetDataType);
@@ -1242,7 +1242,7 @@ public partial class MainWindowViewModel
         MarkUserShootingEdit(ref _shootingPollSuppressFlcUtc);
         try
         {
-            SonyCrSdk.SetShootingProperty(
+            _crSdkShootingWrite.SetShootingProperty(
                 CrSdkDevicePropertyCodes.FlashCompensation,
                 FlashCompensationChoices[value].Value,
                 _lastShootingState.FlashCompensation.SetDataType);
