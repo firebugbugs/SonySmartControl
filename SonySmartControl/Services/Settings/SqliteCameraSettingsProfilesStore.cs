@@ -5,7 +5,7 @@ using SonySmartControl.Settings;
 namespace SonySmartControl.Services.Settings;
 
 /// <summary>
-/// SQLite 版「多配置」存储（%LocalAppData%\SonySmartControl\settings.db）。
+/// SQLite 版「多配置」存储（%LocalAppData%\SonySmartControl\settings.sqlite）。
 /// - profiles: 保存多条配置（JSON 形式存储 CameraUserSettings）
 /// - app_state: 保存当前选中的 profile_id
 /// 同时支持从旧版 camera_user_settings.json 迁移（仅在库为空时导入为“默认配置”）。
@@ -22,6 +22,12 @@ public sealed class SqliteCameraSettingsProfilesStore : ICameraSettingsProfilesS
     private bool _initialized;
 
     private static string DbPath =>
+        Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "SonySmartControl",
+            "settings.sqlite");
+
+    private static string LegacyDbPath =>
         Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "SonySmartControl",
@@ -53,6 +59,8 @@ public sealed class SqliteCameraSettingsProfilesStore : ICameraSettingsProfilesS
             var dir = Path.GetDirectoryName(DbPath);
             if (!string.IsNullOrEmpty(dir))
                 Directory.CreateDirectory(dir);
+
+            TryMigrateLegacyDbFile();
 
             await using var conn = new SqliteConnection(ConnectionString);
             await conn.OpenAsync(ct).ConfigureAwait(false);
@@ -87,6 +95,20 @@ public sealed class SqliteCameraSettingsProfilesStore : ICameraSettingsProfilesS
         finally
         {
             _initLock.Release();
+        }
+    }
+
+    private static void TryMigrateLegacyDbFile()
+    {
+        try
+        {
+            // 若用户已有旧文件，但新文件不存在，则迁移/重命名。
+            if (File.Exists(LegacyDbPath) && !File.Exists(DbPath))
+                File.Move(LegacyDbPath, DbPath);
+        }
+        catch
+        {
+            // 迁移失败不影响后续逻辑：仍可能通过旧 JSON 做初始化。
         }
     }
 
