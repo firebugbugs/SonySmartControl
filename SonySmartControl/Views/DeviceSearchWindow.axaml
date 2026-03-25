@@ -3,14 +3,14 @@
         xmlns:vm="using:SonySmartControl.ViewModels"
         xmlns:models="using:SonySmartControl.Models"
         xmlns:helpers="using:SonySmartControl.Helpers"
-        x:Class="SonySmartControl.Views.LogHistoryWindow"
-        x:DataType="vm:LogHistoryViewModel"
+        x:Class="SonySmartControl.Views.DeviceSearchWindow"
+        x:DataType="vm:DeviceSearchViewModel"
         x:Name="Root"
-        Title="历史日志"
+        Title="设备搜索"
         Icon="{x:Static helpers:AppIconUris.WindowIcon}"
-        Width="560"
+        Width="640"
         Height="520"
-        MinWidth="420"
+        MinWidth="480"
         MinHeight="360"
         WindowStartupLocation="CenterOwner"
         SystemDecorations="None"
@@ -18,9 +18,8 @@
         Background="Transparent"
         TransparencyLevelHint="Transparent"
         ExtendClientAreaToDecorationsHint="False"
-        Loaded="LogHistoryWindow_OnLoaded">
+        Loaded="DeviceSearchWindow_OnLoaded">
 
-    <!-- 与主窗口一致：透明外缘 + 可拖拽缩放边 + 圆角卡片 -->
     <Grid x:Name="OuterChromeGrid">
         <Grid.RowDefinitions>
             <RowDefinition Height="6"/>
@@ -85,7 +84,7 @@
                                        FontSize="15"
                                        FontWeight="SemiBold"
                                        Foreground="#1F2430"
-                                       Text="历史日志"/>
+                                       Text="设备搜索"/>
                         </StackPanel>
                         <StackPanel Grid.Column="2"
                                     Orientation="Horizontal"
@@ -145,130 +144,126 @@
                 <Grid Grid.Row="1"
                       MinHeight="0">
                     <Grid Margin="16,12,16,16"
-                          RowDefinitions="Auto,*,Auto">
+                          RowDefinitions="Auto,Auto,*,Auto">
                         <Grid Grid.Row="0"
                               ColumnDefinitions="*,Auto"
                               ColumnSpacing="12">
                             <TextBlock VerticalAlignment="Center"
                                        FontSize="12"
                                        Foreground="#6B7280"
-                                       Text="{Binding PageInfoText}"/>
-                            <StackPanel Grid.Column="1"
-                                        Orientation="Horizontal"
-                                        Spacing="8"
-                                        VerticalAlignment="Center">
-                                <Button Classes="chrome-text"
-                                        Padding="12,6"
-                                        Command="{Binding PrevPageCommand}"
-                                        Content="上一页"/>
-                                <Button Classes="chrome-text"
-                                        Padding="12,6"
-                                        Command="{Binding NextPageCommand}"
-                                        Content="下一页"/>
-                                <Button Classes="chrome-text"
-                                        Padding="12,6"
-                                        Command="{Binding ReloadCommand}"
-                                        Content="刷新"/>
-                                <Button Classes="chrome-text"
-                                        Padding="12,6"
-                                        Command="{Binding RequestClearCommand}"
-                                        Content="清空日志"/>
-                            </StackPanel>
+                                       TextWrapping="Wrap"
+                                       Text="{Binding StatusHint}"/>
+                            <Button Grid.Column="1"
+                                    Classes="chrome-text"
+                                    Padding="12,6"
+                                    Command="{Binding RefreshCommand}"
+                                    Content="重新搜索"
+                                    IsEnabled="{Binding CanRefresh}"/>
                         </Grid>
 
                         <Border Grid.Row="1"
                                 Margin="0,10,0,0"
-                                CornerRadius="10"
+                                CornerRadius="10,10,0,0"
+                                BorderBrush="#E5EAF0"
+                                BorderThickness="1,1,1,0"
+                                Background="#EBEEF5"
+                                Padding="10,8">
+                            <Grid ColumnDefinitions="44,*,96,200">
+                                <TextBlock FontSize="12"
+                                           FontWeight="SemiBold"
+                                           Foreground="#5C6370"
+                                           Text="序号"/>
+                                <TextBlock Grid.Column="1"
+                                           FontSize="12"
+                                           FontWeight="SemiBold"
+                                           Foreground="#5C6370"
+                                           Text="型号"/>
+                                <TextBlock Grid.Column="2"
+                                           FontSize="12"
+                                           FontWeight="SemiBold"
+                                           Foreground="#5C6370"
+                                           Text="连接"/>
+                                <TextBlock Grid.Column="3"
+                                           FontSize="12"
+                                           FontWeight="SemiBold"
+                                           Foreground="#5C6370"
+                                           Text="设备标识"/>
+                            </Grid>
+                        </Border>
+
+                        <Border Grid.Row="2"
+                                CornerRadius="0,0,10,10"
                                 BorderBrush="#E5EAF0"
                                 BorderThickness="1"
                                 Background="#FFFFFF"
-                                Padding="10">
+                                Padding="0">
                             <Grid>
                                 <TextBlock HorizontalAlignment="Center"
                                            VerticalAlignment="Center"
                                            Foreground="#9CA3AF"
                                            IsVisible="{Binding IsEmpty}"
-                                           Text="暂无日志"/>
-                                <ScrollViewer HorizontalScrollBarVisibility="Disabled"
-                                              VerticalScrollBarVisibility="Auto">
-                                    <ItemsControl ItemsSource="{Binding Items}">
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate x:DataType="models:AppLogEntry">
-                                                <Border Padding="0,6"
-                                                        BorderBrush="#F0F2F6"
-                                                        BorderThickness="0,0,0,1">
-                                                    <Grid ColumnDefinitions="132,*"
-                                                          ColumnSpacing="10">
-                                                        <TextBlock Grid.Column="0"
-                                                                   VerticalAlignment="Top"
-                                                                   FontSize="12"
-                                                                   Foreground="#6B7280"
-                                                                   Text="{Binding TimeLocalText}"/>
-                                                        <Button Grid.Column="1"
-                                                                HorizontalAlignment="Stretch"
-                                                                HorizontalContentAlignment="Left"
-                                                                Background="Transparent"
-                                                                BorderThickness="0"
-                                                                Padding="4,2"
-                                                                Cursor="Hand"
-                                                                Command="{Binding $parent[Window].DataContext.CopyLineCommand}"
-                                                                CommandParameter="{Binding}"
-                                                                ToolTip.Tip="点击复制本条内容">
-                                                            <TextBlock FontSize="13"
-                                                                       Foreground="#2B303B"
-                                                                       Text="{Binding Message}"
-                                                                       TextWrapping="Wrap"/>
-                                                        </Button>
-                                                    </Grid>
-                                                </Border>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
-                                </ScrollViewer>
+                                           Text="未发现设备"/>
+                                <ListBox ItemsSource="{Binding Devices}"
+                                         SelectedItem="{Binding SelectedDevice}"
+                                         Background="Transparent"
+                                         BorderThickness="0"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                    <ListBox.Styles>
+                                        <Style Selector="ListBoxItem">
+                                            <Setter Property="Padding" Value="10,8"/>
+                                        </Style>
+                                    </ListBox.Styles>
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate x:DataType="models:DiscoveredCameraDevice">
+                                            <Grid ColumnDefinitions="44,*,96,200"
+                                                  ColumnSpacing="8">
+                                                <TextBlock VerticalAlignment="Center"
+                                                           FontSize="13"
+                                                           Foreground="#6B7280"
+                                                           Text="{Binding OrdinalLabel}"/>
+                                                <TextBlock Grid.Column="1"
+                                                           VerticalAlignment="Center"
+                                                           FontSize="13"
+                                                           Foreground="#2B303B"
+                                                           Text="{Binding ModelName}"
+                                                           TextTrimming="CharacterEllipsis"/>
+                                                <TextBlock Grid.Column="2"
+                                                           VerticalAlignment="Center"
+                                                           FontSize="12"
+                                                           Foreground="#4B5563"
+                                                           Text="{Binding ConnectionTypeText}"/>
+                                                <TextBlock Grid.Column="3"
+                                                           VerticalAlignment="Center"
+                                                           FontSize="12"
+                                                           Foreground="#6B7280"
+                                                           Text="{Binding EndpointText}"
+                                                           TextTrimming="CharacterEllipsis"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
                             </Grid>
                         </Border>
 
-                        <TextBlock Grid.Row="2"
-                                   Margin="0,8,0,0"
-                                   HorizontalAlignment="Center"
-                                   FontSize="12"
-                                   Foreground="#0E7A43"
-                                   IsVisible="{Binding HasToastText}"
-                                   Text="{Binding ToastText}"/>
-                    </Grid>
-
-                    <Border ZIndex="20"
-                            IsVisible="{Binding ShowClearConfirm}"
-                            Background="#66000000">
-                        <Border MinWidth="320"
-                                MaxWidth="420"
-                                HorizontalAlignment="Center"
-                                VerticalAlignment="Center"
-                                Padding="18"
-                                CornerRadius="12"
-                                Background="#FFFFFF"
-                                BorderBrush="#E5EAF0"
-                                BorderThickness="1"
-                                BoxShadow="0 12 32 0 #22000000">
-                            <StackPanel Spacing="14">
-                                <TextBlock TextWrapping="Wrap"
-                                           Foreground="#2B303B"
-                                           Text="确定清空全部历史日志？此操作不可恢复。"/>
-                                <StackPanel HorizontalAlignment="Right"
-                                            Orientation="Horizontal"
-                                            Spacing="10">
-                                    <Button Classes="chrome-text"
-                                            Padding="14,6"
-                                            Command="{Binding CancelClearCommand}"
-                                            Content="取消"/>
-                                    <Button Classes="popup-danger"
-                                            Padding="14,6"
-                                            Command="{Binding ConfirmClearCommand}"
-                                            Content="确定清空"/>
-                                </StackPanel>
+                        <StackPanel Grid.Row="3"
+                                    Margin="0,12,0,0"
+                                    Spacing="10">
+                            <TextBlock FontSize="12"
+                                       Foreground="#B91C1C"
+                                       TextWrapping="Wrap"
+                                       IsVisible="{Binding ShowDiscoveryError}"
+                                       Text="{Binding ErrorMessage}"/>
+                            <StackPanel HorizontalAlignment="Right"
+                                        Orientation="Horizontal"
+                                        Spacing="10">
+                                <Button Classes="chrome-text"
+                                        Padding="16,8"
+                                        Command="{Binding ConnectToSelectedCommand}"
+                                        Content="连接至此设备"
+                                        IsEnabled="{Binding ConnectButtonEnabled}"/>
                             </StackPanel>
-                        </Border>
-                    </Border>
+                        </StackPanel>
+                    </Grid>
                 </Grid>
             </Grid>
         </Border>

@@ -22,6 +22,7 @@
 #include <filesystem>
 #include <thread>
 #include <vector>
+#include <cwchar>
 
 #if defined(_WIN32)
 #ifndef NOMINMAX
@@ -347,6 +348,86 @@ static std::string CrUtf16ToUtf8(const CrInt16u* p)
     }
     return out;
 #endif
+}
+
+static std::string CrWcharBufferToUtf8(const wchar_t* w, int cch)
+{
+    if (!w || cch <= 0)
+        return {};
+#if defined(_WIN32)
+    const int need = WideCharToMultiByte(CP_UTF8, 0, w, cch, nullptr, 0, nullptr, nullptr);
+    if (need <= 0)
+        return {};
+    std::string out(static_cast<size_t>(need), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, w, cch, out.data(), need, nullptr, nullptr);
+    return out;
+#else
+    std::string out;
+    for (int i = 0; i < cch && i < 512; ++i)
+    {
+        const wchar_t ch = w[i];
+        out.push_back(ch <= 0x7F ? static_cast<char>(ch) : '?');
+    }
+    return out;
+#endif
+}
+
+static std::string CrTCharNullTermToUtf8(const CrChar* t)
+{
+#if defined(_WIN32)
+    const wchar_t* w = reinterpret_cast<const wchar_t*>(t);
+    if (!w)
+        return {};
+    const int cch = static_cast<int>(std::wcsnlen(w, 4096));
+    return CrWcharBufferToUtf8(w, cch);
+#else
+    const char* s = reinterpret_cast<const char*>(t);
+    if (!s)
+        return {};
+    return std::string(s, std::strlen(s));
+#endif
+}
+
+static std::string CrTCharSizedToUtf8(const CrChar* t, CrInt32u sizeBytes)
+{
+#if defined(_WIN32)
+    if (!t || sizeBytes == 0)
+        return {};
+    const int nWchar = static_cast<int>(sizeBytes / sizeof(wchar_t));
+    if (nWchar <= 0)
+        return {};
+    const wchar_t* w = reinterpret_cast<const wchar_t*>(t);
+    int cch = nWchar;
+    while (cch > 0 && w[cch - 1] == L'\0')
+        --cch;
+    if (cch <= 0)
+        return {};
+    return CrWcharBufferToUtf8(w, cch);
+#else
+    if (!t || sizeBytes == 0)
+        return {};
+    return std::string(reinterpret_cast<const char*>(t), static_cast<size_t>(sizeBytes));
+#endif
+}
+
+static std::string CrConnectionTypeUtf8(const ICrCameraObjectInfo* info)
+{
+    if (!info)
+        return {};
+    return CrTCharNullTermToUtf8(info->GetConnectionTypeName());
+}
+
+static std::string CrEndpointUtf8(const ICrCameraObjectInfo* info)
+{
+    if (!info)
+        return {};
+#if defined(_WIN32)
+    const wchar_t* connW = reinterpret_cast<const wchar_t*>(info->GetConnectionTypeName());
+    const std::wstring conn(connW ? connW : L"");
+    if (conn == L"IP")
+        return CrTCharSizedToUtf8(info->GetMACAddressChar(), info->GetMACAddressCharSize());
+#endif
+    return CrTCharSizedToUtf8(reinterpret_cast<const CrChar*>(info->GetId()), info->GetIdSize());
 }
 
 static const ICrCameraObjectInfo* GetInfoOrNull(int index)
@@ -1094,6 +1175,82 @@ SONY_CR_API SonyCrStatus SonyCr_GetCameraModelUtf8(int index, char* buffer, int 
     if (!info)
         return SONY_CR_ERR_INVALID_INDEX;
     const std::string u8 = CrModelToUtf8(info);
+    const int need = static_cast<int>(u8.size() + 1);
+    if (!buffer || bufferSizeBytes < need)
+        return SONY_CR_ERR_BUFFER_TOO_SMALL;
+    std::memcpy(buffer, u8.c_str(), static_cast<size_t>(need));
+    return SONY_CR_OK;
+#endif
+}
+
+SONY_CR_API SonyCrStatus SonyCr_GetCameraConnectionTypeUtf8Length(int index, int* outLengthBytes)
+{
+#if SONY_CR_BRIDGE_STUB
+    if (outLengthBytes)
+        *outLengthBytes = 0;
+    return SONY_CR_ERR_SDK_NOT_LINKED;
+#else
+    if (!outLengthBytes)
+        return SONY_CR_ERR_NOT_INITIALIZED;
+    const auto* info = GetInfoOrNull(index);
+    if (!info)
+        return SONY_CR_ERR_INVALID_INDEX;
+    const std::string u8 = CrConnectionTypeUtf8(info);
+    *outLengthBytes = static_cast<int>(u8.size() + 1);
+    return SONY_CR_OK;
+#endif
+}
+
+SONY_CR_API SonyCrStatus SonyCr_GetCameraConnectionTypeUtf8(int index, char* buffer, int bufferSizeBytes)
+{
+#if SONY_CR_BRIDGE_STUB
+    (void)index;
+    (void)buffer;
+    (void)bufferSizeBytes;
+    return SONY_CR_ERR_SDK_NOT_LINKED;
+#else
+    const auto* info = GetInfoOrNull(index);
+    if (!info)
+        return SONY_CR_ERR_INVALID_INDEX;
+    const std::string u8 = CrConnectionTypeUtf8(info);
+    const int need = static_cast<int>(u8.size() + 1);
+    if (!buffer || bufferSizeBytes < need)
+        return SONY_CR_ERR_BUFFER_TOO_SMALL;
+    std::memcpy(buffer, u8.c_str(), static_cast<size_t>(need));
+    return SONY_CR_OK;
+#endif
+}
+
+SONY_CR_API SonyCrStatus SonyCr_GetCameraEndpointUtf8Length(int index, int* outLengthBytes)
+{
+#if SONY_CR_BRIDGE_STUB
+    if (outLengthBytes)
+        *outLengthBytes = 0;
+    return SONY_CR_ERR_SDK_NOT_LINKED;
+#else
+    if (!outLengthBytes)
+        return SONY_CR_ERR_NOT_INITIALIZED;
+    const auto* info = GetInfoOrNull(index);
+    if (!info)
+        return SONY_CR_ERR_INVALID_INDEX;
+    const std::string u8 = CrEndpointUtf8(info);
+    *outLengthBytes = static_cast<int>(u8.size() + 1);
+    return SONY_CR_OK;
+#endif
+}
+
+SONY_CR_API SonyCrStatus SonyCr_GetCameraEndpointUtf8(int index, char* buffer, int bufferSizeBytes)
+{
+#if SONY_CR_BRIDGE_STUB
+    (void)index;
+    (void)buffer;
+    (void)bufferSizeBytes;
+    return SONY_CR_ERR_SDK_NOT_LINKED;
+#else
+    const auto* info = GetInfoOrNull(index);
+    if (!info)
+        return SONY_CR_ERR_INVALID_INDEX;
+    const std::string u8 = CrEndpointUtf8(info);
     const int need = static_cast<int>(u8.size() + 1);
     if (!buffer || bufferSizeBytes < need)
         return SONY_CR_ERR_BUFFER_TOO_SMALL;

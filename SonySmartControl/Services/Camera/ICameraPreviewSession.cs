@@ -27,7 +27,8 @@ public interface ICameraPreviewSession : IAsyncDisposable
     /// <summary>连接成功后的机身型号；未连接或未枚举到时为 null。</summary>
     string? ConnectedCameraModel { get; }
 
-    Task ConnectAsync(CancellationToken cancellationToken = default);
+    /// <param name="deviceIndex">枚举结果中的从 0 开始的索引，对应用户所选设备。</param>
+    Task ConnectAsync(int deviceIndex = 0, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 开始推送预览帧（CrSDK：在连接且应用完遥控保存设置后再调用，避免与桥接全局锁上的 LiveView 争用导致卡死）。

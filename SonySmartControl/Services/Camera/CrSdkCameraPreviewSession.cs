@@ -23,7 +23,7 @@ public sealed class CrSdkCameraPreviewSession : ICameraPreviewSession
 
     public event EventHandler<Bitmap>? FrameReceived;
 
-    public Task ConnectAsync(CancellationToken cancellationToken = default) =>
+    public Task ConnectAsync(int deviceIndex = 0, CancellationToken cancellationToken = default) =>
         Task.Run(
             () =>
             {
@@ -35,13 +35,22 @@ public sealed class CrSdkCameraPreviewSession : ICameraPreviewSession
 
                     try
                     {
+                        var initOk = false;
                         var st = SonyCrBridgeNative.SonyCr_Init();
                         if (st != (int)SonyCrStatus.Ok)
                             throw CrEx(st, "SonyCr_Init");
+                        initOk = true;
+                        // CrSDK 全局状态已初始化：即使后续枚举/连接失败，也应在 Dispose 里释放，避免后台线程残留导致进程无法退出。
+                        _shouldReleaseSdkOnDispose = true;
 
                         st = SonyCrBridgeNative.SonyCr_EnumCameraDevicesRefresh();
                         if (st != (int)SonyCrStatus.Ok)
+                        {
+                            // 枚举失败（如 -3）时，很多情况下仍会启动后台线程；这里先尝试释放全局状态以避免关窗后“残留线程”。
+                            if (initOk)
+                                SonyCrBridgeNative.TryReleaseSdk();
                             throw CrEx(st, "SonyCr_EnumCameraDevicesRefresh");
+                        }
 
                         st = SonyCrBridgeNative.SonyCr_GetCameraDeviceCount(out var count);
                         if (st != (int)SonyCrStatus.Ok)
@@ -50,14 +59,16 @@ public sealed class CrSdkCameraPreviewSession : ICameraPreviewSession
                         if (count < 1)
                             throw new InvalidOperationException("未检测到相机：请 USB/网线连接并设为「遥控拍摄」后重试。");
 
-                        ConnectedCameraModel = SonyCrBridgeNative.GetCameraModelUtf8(0);
+                        if (deviceIndex < 0 || deviceIndex >= count)
+                            throw new ArgumentOutOfRangeException(nameof(deviceIndex), "所选设备索引无效，请重新搜索后连接。");
 
-                        st = SonyCrBridgeNative.SonyCr_ConnectRemoteByIndex(0);
+                        ConnectedCameraModel = SonyCrBridgeNative.GetCameraModelUtf8(deviceIndex);
+
+                        st = SonyCrBridgeNative.SonyCr_ConnectRemoteByIndex(deviceIndex);
                         if (st != (int)SonyCrStatus.Ok)
-                            throw CrEx(st, "SonyCr_ConnectRemoteByIndex(0)");
+                            throw CrEx(st, $"SonyCr_ConnectRemoteByIndex({deviceIndex})");
 
                         _sdkConnected = true;
-                        _shouldReleaseSdkOnDispose = true;
                     }
                     catch (DllNotFoundException ex)
                     {

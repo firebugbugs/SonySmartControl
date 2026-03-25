@@ -108,7 +108,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     /// <summary>静态原图回看区（可平移缩放，无辅助线）。</summary>
     public bool IsStaticReviewVisible => !IsViewingLiveMonitor;
 
-    [ObservableProperty] private string _statusMessage = "就绪：点击「连接」通过 CrSDK 接入相机。";
+    [ObservableProperty] private string _statusMessage = "就绪：点击「连接」打开设备搜索并选择机身。";
     [ObservableProperty] private string _transportSpeedText = "↑0 B/s ↓0 B/s";
 
     [ObservableProperty]
@@ -347,6 +347,12 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     public string VideoSidebarModeTextColor => IsVideoSidebarMode ? "#FFFFFF" : "#4286F5";
 
     private ICameraPreviewSession? _session;
+
+    /// <summary>正在执行 <see cref="ConnectAsync"/>、尚未赋给 <see cref="_session"/> 的会话；关窗口时必须释放，否则会话与原生线程泄漏。</summary>
+    private ICameraPreviewSession? _connectingSession;
+
+    private CancellationTokenSource? _connectCts;
+
     private Bitmap? _lastFrameOwner;
 
     private bool _sdCardUsageRefreshInFlight;
@@ -1805,10 +1811,22 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         };
 
     [RelayCommand]
-    private async Task Connect()
+    private void OpenDeviceSearch()
+    {
+        var win = new DeviceSearchWindow();
+        var vm = new DeviceSearchViewModel(this, () => win.Close(), _appLogService);
+        win.DataContext = vm;
+        if (_topLevelProvider.GetTopLevel() is Window owner)
+            win.Show(owner);
+        else
+            win.Show();
+    }
+
+    /// <summary>由设备搜索窗口调用：连接用户在列表中选择的设备（CrSDK 枚举索引）。</summary>
+    public async Task<bool> ConnectToCameraAsync(int deviceIndex)
     {
         if (_session != null || IsConnecting)
-            return;
+            return false;
 
         IsConnecting = true;
         StatusMessage = "正在连接相机，请稍候…";
@@ -1820,29 +1838,36 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         var session = _cameraPreviewSessionFactory.Create();
 
         session.FrameReceived += OnFrameReceived;
+        _connectCts = new CancellationTokenSource();
+        _connectingSession = session;
 
         try
         {
             try
             {
-                await session.ConnectAsync().ConfigureAwait(true);
+                await session.ConnectAsync(deviceIndex, _connectCts.Token).ConfigureAwait(true);
             }
             catch (Exception ex)
             {
                 session.FrameReceived -= OnFrameReceived;
-                try
+                if (_connectingSession == session)
                 {
-                    await session.DisposeAsync().ConfigureAwait(true);
-                }
-                catch
-                {
-                    // CrSDK 未部署 DLL 时 Dispose 内仍可能触发 P/Invoke；忽略二次异常
+                    _connectingSession = null;
+                    try
+                    {
+                        await session.DisposeAsync().ConfigureAwait(true);
+                    }
+                    catch
+                    {
+                        // CrSDK 未部署 DLL 时 Dispose 内仍可能触发 P/Invoke；忽略二次异常
+                    }
                 }
 
-                StatusMessage = ex.Message;
-                return;
+                StatusMessage = ex is OperationCanceledException ? "连接已取消。" : ex.Message;
+                return false;
             }
 
+            _connectingSession = null;
             _session = session;
             IsSessionActive = true;
             ConnectedCameraModelName = NormalizeCameraModelName(session.ConnectedCameraModel);
@@ -1860,7 +1885,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             {
                 StatusMessage = "连接后初始化失败: " + ex.Message;
                 await ShutdownCameraSessionAsync().ConfigureAwait(true);
-                return;
+                return false;
             }
 
             try
@@ -1885,12 +1910,24 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             {
                 StatusMessage = "已连接相机，但启动实时预览失败: " + ex.Message;
                 await ShutdownCameraSessionAsync().ConfigureAwait(true);
+                return false;
             }
+
+            return true;
         }
         finally
         {
             if (IsConnecting)
                 IsConnecting = false;
+            try
+            {
+                _connectCts?.Dispose();
+            }
+            catch
+            {
+            }
+
+            _connectCts = null;
         }
     }
 
@@ -2303,6 +2340,48 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         CancelFilmstripHostWidthUpdates();
+        CancelRecentCaptureSyncAndSdRefresh();
+
+        _connectCts?.Cancel();
+        try
+        {
+            if (_connectingSession != null)
+            {
+                var s = _connectingSession;
+                _connectingSession = null;
+                s.FrameReceived -= OnFrameReceived;
+                await s.DisposeAsync().ConfigureAwait(false);
+            }
+        }
+        catch
+        {
+        }
+
         await ShutdownCameraSessionAsync().ConfigureAwait(false);
+    }
+
+    private void CancelRecentCaptureSyncAndSdRefresh()
+    {
+        try
+        {
+            _recentCaptureSyncCts?.Cancel();
+        }
+        catch
+        {
+        }
+
+        _recentCaptureSyncCts?.Dispose();
+        _recentCaptureSyncCts = null;
+
+        try
+        {
+            _sdCardUsageRefreshCts?.Cancel();
+        }
+        catch
+        {
+        }
+
+        _sdCardUsageRefreshCts?.Dispose();
+        _sdCardUsageRefreshCts = null;
     }
 }

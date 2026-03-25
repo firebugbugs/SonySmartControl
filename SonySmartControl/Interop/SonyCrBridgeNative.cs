@@ -34,6 +34,18 @@ internal static class SonyCrBridgeNative
     internal static extern int SonyCr_GetCameraModelUtf8(int index, [Out] byte[] buffer, int bufferSizeBytes);
 
     [DllImport(Dll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    internal static extern int SonyCr_GetCameraConnectionTypeUtf8Length(int index, out int outLengthBytes);
+
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    internal static extern int SonyCr_GetCameraConnectionTypeUtf8(int index, [Out] byte[] buffer, int bufferSizeBytes);
+
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    internal static extern int SonyCr_GetCameraEndpointUtf8Length(int index, out int outLengthBytes);
+
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    internal static extern int SonyCr_GetCameraEndpointUtf8(int index, [Out] byte[] buffer, int bufferSizeBytes);
+
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     internal static extern int SonyCr_ConnectRemoteByIndex(int index);
 
     [DllImport(Dll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
@@ -547,6 +559,44 @@ internal static class SonyCrBridgeNative
             return null;
 
         return Encoding.UTF8.GetString(buf.AsSpan(0, len - 1));
+    }
+
+    internal static string? TryGetCameraConnectionTypeUtf8(int index)
+    {
+        try
+        {
+            var st = SonyCr_GetCameraConnectionTypeUtf8Length(index, out var len);
+            if (st != (int)SonyCrStatus.Ok || len <= 0)
+                return null;
+            var buf = new byte[len];
+            st = SonyCr_GetCameraConnectionTypeUtf8(index, buf, len);
+            if (st != (int)SonyCrStatus.Ok)
+                return null;
+            return Encoding.UTF8.GetString(buf.AsSpan(0, len - 1));
+        }
+        catch (EntryPointNotFoundException)
+        {
+            return null;
+        }
+    }
+
+    internal static string? TryGetCameraEndpointUtf8(int index)
+    {
+        try
+        {
+            var st = SonyCr_GetCameraEndpointUtf8Length(index, out var len);
+            if (st != (int)SonyCrStatus.Ok || len <= 0)
+                return null;
+            var buf = new byte[len];
+            st = SonyCr_GetCameraEndpointUtf8(index, buf, len);
+            if (st != (int)SonyCrStatus.Ok)
+                return null;
+            return Encoding.UTF8.GetString(buf.AsSpan(0, len - 1));
+        }
+        catch (EntryPointNotFoundException)
+        {
+            return null;
+        }
     }
 
     /// <summary>

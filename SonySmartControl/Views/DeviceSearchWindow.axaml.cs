@@ -6,25 +6,26 @@ using Avalonia.Media;
 using Avalonia.Platform;
 using Avalonia.VisualTree;
 using SonySmartControl.Helpers;
+using SonySmartControl.ViewModels;
 
 namespace SonySmartControl.Views;
 
-/// <summary>
-/// 历史日志：与主窗口相同的无边框卡片样式；关闭仅销毁本窗口，不触发主窗口 <see cref="MainWindow"/> 的会话释放。
-/// </summary>
-public partial class LogHistoryWindow : Window
+/// <summary>设备搜索：与 <see cref="LogHistoryWindow"/> 相同的无边框卡片样式。</summary>
+public partial class DeviceSearchWindow : Window
 {
     private static readonly BoxShadows CardRestoredShadow = BoxShadows.Parse("0 12 40 0 #28000000");
 
-    public LogHistoryWindow()
+    public DeviceSearchWindow()
     {
         InitializeComponent();
     }
 
-    private void LogHistoryWindow_OnLoaded(object? sender, RoutedEventArgs e)
+    private async void DeviceSearchWindow_OnLoaded(object? sender, RoutedEventArgs e)
     {
         ApplyTaskbarWindowIcon();
         SyncChromeWindowState();
+        if (DataContext is DeviceSearchViewModel vm)
+            await vm.LoadAsync().ConfigureAwait(true);
     }
 
     private void ApplyTaskbarWindowIcon()
@@ -110,7 +111,6 @@ public partial class LogHistoryWindow : Window
     private void ChromeMaximize_OnClick(object? sender, RoutedEventArgs e) =>
         ToggleMaximizeRestore();
 
-    /// <summary>仅关闭本窗口，不调用主窗口 ViewModel 的释放逻辑（避免断开相机）。</summary>
     private void ChromeClose_OnClick(object? sender, RoutedEventArgs e) => Close();
 
     private void ResizeNw_OnPointerPressed(object? sender, PointerPressedEventArgs e)

@@ -73,6 +73,8 @@
                 <Border x:Name="TitleBarHost"
                         Grid.Row="0"
                         MinHeight="44"
+                        Margin="1,1,1,0"
+                        CornerRadius="13,13,0,0"
                         Background="#EEF0F5"
                         BorderBrush="#D9DEE8"
                         BorderThickness="0,0,0,1"
@@ -548,7 +550,7 @@
                                 VerticalAlignment="Top">
                         <Button Classes="chrome-text"
                                 Content="连接"
-                                Command="{Binding ConnectCommand}"
+                                Command="{Binding OpenDeviceSearchCommand}"
                                 IsEnabled="{Binding IsConnectEnabled}"/>
                         <Button Classes="chrome-text"
                                 Content="断开"

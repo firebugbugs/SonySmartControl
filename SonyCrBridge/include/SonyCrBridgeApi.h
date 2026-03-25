@@ -62,6 +62,17 @@ SONY_CR_API SonyCrStatus SonyCr_GetCameraModelUtf8(int index, char* buffer, int 
 /** 返回型号 UTF-8 字节数（含 \\0），便于分配 buffer。 */
 SONY_CR_API SonyCrStatus SonyCr_GetCameraModelUtf8Length(int index, int* outLengthBytes);
 
+/** 连接类型名称（如 USB / IP），UTF-8，含结尾 0。与 ICrCameraObjectInfo::GetConnectionTypeName 一致。 */
+SONY_CR_API SonyCrStatus SonyCr_GetCameraConnectionTypeUtf8(int index, char* buffer, int bufferSizeBytes);
+SONY_CR_API SonyCrStatus SonyCr_GetCameraConnectionTypeUtf8Length(int index, int* outLengthBytes);
+
+/**
+ * 设备标识：IP 连接时为 MAC 文本；USB 等为机身 Id（序列号等）。UTF-8，含结尾 0。
+ * 与 RemoteCli 列举逻辑一致。
+ */
+SONY_CR_API SonyCrStatus SonyCr_GetCameraEndpointUtf8(int index, char* buffer, int bufferSizeBytes);
+SONY_CR_API SonyCrStatus SonyCr_GetCameraEndpointUtf8Length(int index, int* outLengthBytes);
+
 /*
  * 以 Remote 模式连接相机（SCRSDK::Connect + CrSdkControlMode_Remote）。
  * 需先 SonyCr_EnumCameraDevicesRefresh；成功后回调 OnConnected 再开启 Live View。
