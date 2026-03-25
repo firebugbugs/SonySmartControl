@@ -9,7 +9,7 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="4*" MinHeight="220"/>
             <RowDefinition Height="6"/>
-            <RowDefinition Height="1.2*" MinHeight="110"/>
+            <RowDefinition Height="Auto" MinHeight="110" MaxHeight="180"/>
         </Grid.RowDefinitions>
 
         <Border x:Name="PreviewBorder"
@@ -83,34 +83,40 @@
                 BoxShadow="0 2 8 0 #12000000"
                 behaviors:FilmstripBarWheelBehavior.IsFilmstripWheelEnabled="True">
             <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
-                <StackPanel Grid.Column="0"
-                            Width="126"
-                            VerticalAlignment="Center">
-                    <Panel Height="96">
-                        <Border CornerRadius="8"
-                                Background="#EEF1F6"
-                                VerticalAlignment="Stretch"
-                                HorizontalAlignment="Stretch"/>
-                        <Border CornerRadius="8"
-                                IsVisible="{Binding IsViewingLiveMonitor}"
+                <Border Grid.Column="0"
+                        Width="126"
+                        MinHeight="52"
+                        CornerRadius="10"
+                        ClipToBounds="True"
+                        VerticalAlignment="Stretch">
+                    <Grid>
+                        <!-- 选中态背景：放在按钮背后 -->
+                        <Border IsVisible="{Binding IsViewingLiveMonitor}"
                                 Background="#D4E8FC"
-                                VerticalAlignment="Stretch"
-                                HorizontalAlignment="Stretch"/>
-                        <Button Classes="filmstrip-tile"
-                                Height="96"
+                                HorizontalAlignment="Stretch"
+                                VerticalAlignment="Stretch"/>
+                        <Button Classes="filmstrip-live-tile"
                                 HorizontalAlignment="Stretch"
                                 VerticalAlignment="Stretch"
-                                Focusable="False"
                                 Command="{Binding ShowLiveMonitorCommand}"
                                 ToolTip.Tip="返回实时取景">
-                            <TextBlock Text="实时"
-                                       FontWeight="SemiBold"
-                                       Foreground="#1E3A5F"
-                                       HorizontalAlignment="Center"
-                                       VerticalAlignment="Center"/>
+                            <StackPanel Orientation="Vertical"
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center"
+                                        Spacing="6">
+                                <TextBlock Text="&#xE6F6;"
+                                           FontFamily="avares://SonySmartControl/Assets/Fonts/iconfont.ttf#CheemsFont"
+                                           FontSize="18"
+                                           Foreground="#1F5FAF"
+                                           HorizontalAlignment="Center"/>
+                                <TextBlock Text="实时"
+                                           FontWeight="SemiBold"
+                                           Foreground="#1E3A5F"
+                                           HorizontalAlignment="Center"/>
+                            </StackPanel>
                         </Button>
-                    </Panel>
-                </StackPanel>
+                    </Grid>
+                </Border>
 
                 <controls:FilmstripPhotosHost x:Name="FilmstripPhotos"
                                               Grid.Column="1"

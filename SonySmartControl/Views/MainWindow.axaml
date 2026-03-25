@@ -524,6 +524,13 @@
                                 </StackPanel>
                             </StackPanel>
                         </Border>
+
+                        <Button Classes="popup-danger"
+                                Content="断开连接"
+                                Command="{Binding DisconnectCommand}"
+                                HorizontalAlignment="Stretch"
+                                Padding="12,8"
+                                ToolTip.Tip="断开相机连接并释放会话。"/>
                     </StackPanel>
                 </Border>
             </Popup>
@@ -556,39 +563,43 @@
                                     Padding="8,4"
                                     Command="{Binding OpenSettingsProfilesCommand}"
                                     ToolTip.Tip="打开配置">
-                                <TextBlock Text="&#xEC17;"
+                                <TextBlock Text="&#xE681;"
                                            FontFamily="avares://SonySmartControl/Assets/Fonts/iconfont.ttf#CheemsFont"
-                                           FontSize="18"
+                                           FontSize="20"
                                            Foreground="#1F5FAF"
                                            VerticalAlignment="Center"/>
                             </Button>
+                            <Button Classes="author-icon-link"
+                                    Cursor="Hand"
+                                    Padding="8,4"
+                                    Command="{Binding OpenLogHistoryCommand}"
+                                    ToolTip.Tip="历史日志">
+                                <TextBlock Text="&#xE715;"
+                                           FontFamily="avares://SonySmartControl/Assets/Fonts/iconfont.ttf#CheemsFont"
+                                           FontSize="22"
+                                           Foreground="#1F5FAF"
+                                           VerticalAlignment="Center"/>
+                            </Button>
+                            <Grid VerticalAlignment="Center"
+                                  Margin="4,0,0,0">
+                                <!-- 就绪提示：在普通文本中嵌入图标字体，避免直接把 PUA 字符塞进 StatusMessage 导致乱码 -->
+                                <TextBlock IsVisible="{Binding ShowReadyHint}"
+                                           TextWrapping="Wrap"
+                                           Foreground="#4B5260">
+                                    <Run Text="就绪：点击顶部 "/>
+                                    <Run Text="&#xE6F6;"
+                                         FontFamily="avares://SonySmartControl/Assets/Fonts/iconfont.ttf#CheemsFont"/>
+                                    <Run Text=" 打开设备搜索并选择机身。"/>
+                                </TextBlock>
+                                <TextBlock IsVisible="{Binding !ShowReadyHint}"
+                                           Text="{Binding StatusMessage}"
+                                           TextWrapping="Wrap"
+                                           Foreground="#4B5260"/>
+                            </Grid>
                         </StackPanel>
 
                         <StackPanel Orientation="Horizontal"
                                     Spacing="10">
-                        <Button Classes="chrome-text"
-                                Content="连接"
-                                Command="{Binding OpenDeviceSearchCommand}"
-                                IsEnabled="{Binding IsConnectEnabled}"/>
-                        <Button Classes="chrome-text"
-                                Content="断开"
-                                Command="{Binding DisconnectCommand}"
-                                IsEnabled="{Binding IsDisconnectEnabled}"/>
-                        <Button Classes="author-icon-link"
-                                Cursor="Hand"
-                                Padding="8,4"
-                                Command="{Binding OpenLogHistoryCommand}"
-                                ToolTip.Tip="历史日志">
-                            <TextBlock Text="&#xE715;"
-                                       FontFamily="avares://SonySmartControl/Assets/Fonts/iconfont.ttf#CheemsFont"
-                                       FontSize="18"
-                                       Foreground="#1F5FAF"
-                                       VerticalAlignment="Center"/>
-                        </Button>
-                        <TextBlock VerticalAlignment="Center"
-                                   Text="{Binding StatusMessage}"
-                                   TextWrapping="Wrap"
-                                   Foreground="#4B5260"/>
                     </StackPanel>
                     </StackPanel>
 

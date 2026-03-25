@@ -24,6 +24,41 @@
     <Style Selector="Button.filmstrip-tile:pointerover /template/ ContentPresenter#PART_ContentPresenter">
         <Setter Property="Opacity" Value="0.92"/>
     </Style>
+
+    <!-- 胶片条左侧「实时」按钮：自适应高度 + 卡片风格 -->
+    <Style Selector="Button.filmstrip-live-tile">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Padding" Value="0"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Focusable" Value="False"/>
+        <Setter Property="HorizontalAlignment" Value="Stretch"/>
+        <Setter Property="VerticalAlignment" Value="Stretch"/>
+        <Setter Property="Template">
+            <ControlTemplate>
+                <Border x:Name="Card"
+                        CornerRadius="10"
+                        Background="#F2F4F8"
+                        BorderBrush="#E1E6EF"
+                        BorderThickness="1">
+                    <ContentPresenter x:Name="PART_ContentPresenter"
+                                      HorizontalAlignment="Center"
+                                      VerticalAlignment="Center"
+                                      Margin="12,10"
+                                      Content="{TemplateBinding Content}"
+                                      ContentTemplate="{TemplateBinding ContentTemplate}"/>
+                </Border>
+            </ControlTemplate>
+        </Setter>
+    </Style>
+    <Style Selector="Button.filmstrip-live-tile:pointerover /template/ Border#Card">
+        <Setter Property="Background" Value="#EAF2FF"/>
+        <Setter Property="BorderBrush" Value="#C9DDFF"/>
+    </Style>
+    <Style Selector="Button.filmstrip-live-tile:pressed /template/ Border#Card">
+        <Setter Property="Background" Value="#DDEBFF"/>
+        <Setter Property="BorderBrush" Value="#B7D1FF"/>
+    </Style>
     <Style Selector="Button.popup-lite">
         <Setter Property="Background" Value="#F5F7FA"/>
         <Setter Property="BorderBrush" Value="#D6DCE5"/>

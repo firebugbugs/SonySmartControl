@@ -42,6 +42,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     private long? _currentProfileId;
 
     private int _saveSettingsDbPersistVersion;
+    private int _cameraShootingProfilePersistVersion;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsHistogramOverlayVisible))]
@@ -112,7 +113,11 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     /// <summary>静态原图回看区（可平移缩放，无辅助线）。</summary>
     public bool IsStaticReviewVisible => !IsViewingLiveMonitor;
 
-    [ObservableProperty] private string _statusMessage = "就绪：点击「连接」打开设备搜索并选择机身。";
+    public const string ReadyHintText = "就绪：点击顶部按钮打开设备搜索并选择机身。";
+
+    [ObservableProperty] private string _statusMessage = ReadyHintText;
+
+    [ObservableProperty] private bool _showReadyHint = true;
     [ObservableProperty] private string _transportSpeedText = "↑0 B/s ↓0 B/s";
 
     [ObservableProperty]
@@ -476,6 +481,34 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         _ = PersistSettingsToDbAfterDelayAsync(v);
     }
 
+    private void SchedulePersistCameraShootingProfileFromStateDebounced(CrSdkShootingState s)
+    {
+        if (!_persistEnabled)
+            return;
+        if (_currentProfileId is not long)
+            return;
+        var v = ++_cameraShootingProfilePersistVersion;
+        _ = PersistCameraShootingProfileFromStateAfterDelayAsync(v, s);
+    }
+
+    private async Task PersistCameraShootingProfileFromStateAfterDelayAsync(int version, CrSdkShootingState s)
+    {
+        try
+        {
+            await Task.Delay(250).ConfigureAwait(true);
+            if (version != _cameraShootingProfilePersistVersion)
+                return;
+            if (_currentProfileId is not long pid)
+                return;
+            var profile = CameraShootingProfile.FromState(s);
+            var json = CameraShootingProfile.ToJson(profile);
+            await _profilesStore.UpdateCameraSettingsJsonAsync(pid, json).ConfigureAwait(true);
+        }
+        catch
+        {
+        }
+    }
+
     private async Task PersistSettingsToDbAfterDelayAsync(int version)
     {
         try
@@ -556,8 +589,12 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     [RelayCommand]
     private async Task ToggleCameraActionsPopupAsync()
     {
+        // 未连接时：相当于点击“连接”，打开设备搜索窗口。
         if (!IsSessionActive)
+        {
+            OpenDeviceSearch();
             return;
+        }
         IsConnectedActionsPopupOpen = !IsConnectedActionsPopupOpen;
         if (IsConnectedActionsPopupOpen)
         {

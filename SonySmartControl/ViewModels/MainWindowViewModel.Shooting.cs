@@ -393,6 +393,9 @@ public partial class MainWindowViewModel
         var s = parsed;
         _lastShootingState = s;
 
+        // 将可写拍摄设置快照保存到当前配置（自动保存，防抖）。
+        SchedulePersistCameraShootingProfileFromStateDebounced(s);
+
         ConnectedCameraLensModelName = string.IsNullOrWhiteSpace(s.LensModelName) ? "暂未识别" : s.LensModelName;
         ConnectedCameraBatteryLevelText = s.BatteryPercent is >= 0 and <= 100
             ? $"{s.BatteryPercent.Value}%"

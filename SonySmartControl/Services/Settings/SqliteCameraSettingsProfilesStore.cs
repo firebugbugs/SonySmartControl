@@ -66,6 +66,7 @@ public sealed class SqliteCameraSettingsProfilesStore : ICameraSettingsProfilesS
                                   id INTEGER PRIMARY KEY AUTOINCREMENT,
                                   name TEXT NOT NULL UNIQUE,
                                   settings_json TEXT NOT NULL,
+                                  camera_settings_json TEXT NOT NULL DEFAULT '',
                                   created_utc TEXT NOT NULL,
                                   updated_utc TEXT NOT NULL
                               );
@@ -77,12 +78,47 @@ public sealed class SqliteCameraSettingsProfilesStore : ICameraSettingsProfilesS
                               """;
             await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
 
+            // 兼容旧库：早期版本没有 camera_settings_json 列，运行时补齐。
+            await EnsureProfilesHasCameraSettingsColumnAsync(conn, ct).ConfigureAwait(false);
+
             _initialized = true;
             await TryMigrateLegacyJsonAsync(conn, ct).ConfigureAwait(false);
         }
         finally
         {
             _initLock.Release();
+        }
+    }
+
+    private static async Task EnsureProfilesHasCameraSettingsColumnAsync(SqliteConnection conn, CancellationToken ct)
+    {
+        try
+        {
+            var pragma = conn.CreateCommand();
+            pragma.CommandText = "PRAGMA table_info(profiles);";
+            await using var r = await pragma.ExecuteReaderAsync(ct).ConfigureAwait(false);
+            var has = false;
+            while (await r.ReadAsync(ct).ConfigureAwait(false))
+            {
+                // PRAGMA table_info returns: cid, name, type, notnull, dflt_value, pk
+                var name = r.GetString(1);
+                if (string.Equals(name, "camera_settings_json", StringComparison.OrdinalIgnoreCase))
+                {
+                    has = true;
+                    break;
+                }
+            }
+
+            if (has)
+                return;
+
+            var alter = conn.CreateCommand();
+            alter.CommandText = "ALTER TABLE profiles ADD COLUMN camera_settings_json TEXT NOT NULL DEFAULT '';";
+            await alter.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
+        catch
+        {
+            // 忽略：可能并发初始化或权限问题
         }
     }
 
@@ -109,8 +145,8 @@ public sealed class SqliteCameraSettingsProfilesStore : ICameraSettingsProfilesS
             var now = DateTimeOffset.UtcNow.ToString("O");
             var ins = conn.CreateCommand();
             ins.CommandText = """
-                              INSERT INTO profiles (name, settings_json, created_utc, updated_utc)
-                              VALUES ($name, $json, $created, $updated);
+                              INSERT INTO profiles (name, settings_json, camera_settings_json, created_utc, updated_utc)
+                              VALUES ($name, $json, '', $created, $updated);
                               """;
             ins.Parameters.AddWithValue("$name", "默认配置");
             ins.Parameters.AddWithValue("$json", JsonSerializer.Serialize(s, JsonOptions));
@@ -197,8 +233,8 @@ public sealed class SqliteCameraSettingsProfilesStore : ICameraSettingsProfilesS
 
         var cmd = conn.CreateCommand();
         cmd.CommandText = """
-                          INSERT INTO profiles (name, settings_json, created_utc, updated_utc)
-                          VALUES ($name, $json, $created, $updated);
+                          INSERT INTO profiles (name, settings_json, camera_settings_json, created_utc, updated_utc)
+                          VALUES ($name, $json, '', $created, $updated);
                           """;
         cmd.Parameters.AddWithValue("$name", name.Trim());
         cmd.Parameters.AddWithValue("$json", JsonSerializer.Serialize(settings, JsonOptions));
@@ -310,6 +346,49 @@ public sealed class SqliteCameraSettingsProfilesStore : ICameraSettingsProfilesS
                               ON CONFLICT(key) DO UPDATE SET value=excluded.value;
                               """;
             cmd.Parameters.AddWithValue("$v", id?.ToString() ?? "");
+            await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
+        catch
+        {
+        }
+    }
+
+    public async Task<string?> LoadCameraSettingsJsonAsync(long id, CancellationToken ct = default)
+    {
+        await EnsureInitializedAsync(ct).ConfigureAwait(false);
+        try
+        {
+            await using var conn = new SqliteConnection(ConnectionString);
+            await conn.OpenAsync(ct).ConfigureAwait(false);
+            var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT camera_settings_json FROM profiles WHERE id=$id;";
+            cmd.Parameters.AddWithValue("$id", id);
+            var obj = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
+            return obj as string;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public async Task UpdateCameraSettingsJsonAsync(long id, string cameraSettingsJson, CancellationToken ct = default)
+    {
+        cameraSettingsJson ??= "";
+        await EnsureInitializedAsync(ct).ConfigureAwait(false);
+        try
+        {
+            await using var conn = new SqliteConnection(ConnectionString);
+            await conn.OpenAsync(ct).ConfigureAwait(false);
+            var cmd = conn.CreateCommand();
+            cmd.CommandText = """
+                              UPDATE profiles
+                              SET camera_settings_json=$json, updated_utc=$updated
+                              WHERE id=$id;
+                              """;
+            cmd.Parameters.AddWithValue("$id", id);
+            cmd.Parameters.AddWithValue("$json", cameraSettingsJson);
+            cmd.Parameters.AddWithValue("$updated", DateTimeOffset.UtcNow.ToString("O"));
             await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
         }
         catch

@@ -20,6 +20,10 @@ public interface ICameraSettingsProfilesStore
     Task<long?> GetCurrentProfileIdAsync(CancellationToken ct = default);
 
     Task SetCurrentProfileIdAsync(long? id, CancellationToken ct = default);
+
+    Task<string?> LoadCameraSettingsJsonAsync(long id, CancellationToken ct = default);
+
+    Task UpdateCameraSettingsJsonAsync(long id, string cameraSettingsJson, CancellationToken ct = default);
 }
 
 public sealed record CameraSettingsProfileInfo(long Id, string Name, DateTimeOffset UpdatedUtc);
