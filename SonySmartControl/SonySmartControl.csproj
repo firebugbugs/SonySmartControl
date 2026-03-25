@@ -41,6 +41,7 @@
         </PackageReference>
         <PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.1" />
         <PackageReference Include="FluentAvaloniaUI" Version="2.5.0" />
+        <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.0" />
         <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.0" />
         <PackageReference Include="MetadataExtractor" Version="2.8.1" />
     </ItemGroup>

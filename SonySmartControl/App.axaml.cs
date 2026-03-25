@@ -2,12 +2,12 @@ using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Data.Core;
 using Avalonia.Data.Core.Plugins;
-using System.Linq;
 using Avalonia.Markup.Xaml;
 using Microsoft.Extensions.DependencyInjection;
 using SonySmartControl.Services;
 using SonySmartControl.ViewModels;
 using SonySmartControl.Views;
+using System.Linq;
 
 namespace SonySmartControl;
 

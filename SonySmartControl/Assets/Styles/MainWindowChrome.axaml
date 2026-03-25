@@ -55,15 +55,30 @@
         <Setter Property="Foreground" Value="#2B303B"/>
         <Setter Property="FontSize" Value="13"/>
     </Style>
-    <Style Selector="Button.chrome-text:pointerover">
+    <Style Selector="Button.chrome-text:not(.camera-status-badge):pointerover">
         <Setter Property="Background" Value="#F3F5F9"/>
         <Setter Property="BorderBrush" Value="#C5CAD6"/>
     </Style>
-    <Style Selector="Button.chrome-text:pressed">
+    <Style Selector="Button.chrome-text:not(.camera-status-badge):pressed">
         <Setter Property="Background" Value="#E8EBF2"/>
     </Style>
     <Style Selector="Button.chrome-text:disabled">
         <Setter Property="Opacity" Value="0.45"/>
+    </Style>
+
+    <!-- 作者信息弹窗：仅图标外链，无边框 -->
+    <Style Selector="Button.author-icon-link">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderBrush" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Padding" Value="10,6"/>
+        <Setter Property="MinWidth" Value="0"/>
+    </Style>
+    <Style Selector="Button.author-icon-link:pointerover">
+        <Setter Property="Background" Value="#F0F3F8"/>
+    </Style>
+    <Style Selector="Button.author-icon-link:pressed">
+        <Setter Property="Background" Value="#E4E9F2"/>
     </Style>
 
     <!-- 右侧拍照/摄影标签：始终透明底，仅文字反馈 -->

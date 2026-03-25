@@ -1,0 +1,150 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:SonySmartControl.ViewModels"
+        xmlns:models="using:SonySmartControl.Models"
+        xmlns:helpers="using:SonySmartControl.Helpers"
+        x:Class="SonySmartControl.Views.LogHistoryWindow"
+        x:DataType="vm:LogHistoryViewModel"
+        x:Name="Root"
+        Title="历史日志"
+        Icon="{x:Static helpers:AppIconUris.WindowIcon}"
+        Width="560"
+        Height="520"
+        MinWidth="420"
+        MinHeight="360"
+        WindowStartupLocation="CenterOwner"
+        Background="#F6F7FA">
+    <Grid>
+        <Grid Margin="16"
+              RowDefinitions="Auto,Auto,*,Auto">
+        <Grid Grid.Row="0"
+              ColumnDefinitions="*,Auto"
+              ColumnSpacing="12">
+            <TextBlock VerticalAlignment="Center"
+                       FontSize="16"
+                       FontWeight="SemiBold"
+                       Foreground="#1F2430"
+                       Text="历史日志"/>
+            <StackPanel Grid.Column="1"
+                        Orientation="Horizontal"
+                        Spacing="8"
+                        VerticalAlignment="Center">
+                <Button Classes="chrome-text"
+                        Padding="12,6"
+                        Command="{Binding PrevPageCommand}"
+                        Content="上一页"/>
+                <Button Classes="chrome-text"
+                        Padding="12,6"
+                        Command="{Binding NextPageCommand}"
+                        Content="下一页"/>
+                <Button Classes="chrome-text"
+                        Padding="12,6"
+                        Command="{Binding ReloadCommand}"
+                        Content="刷新"/>
+                <Button Classes="chrome-text"
+                        Padding="12,6"
+                        Command="{Binding RequestClearCommand}"
+                        Content="清空日志"/>
+            </StackPanel>
+        </Grid>
+
+        <TextBlock Grid.Row="1"
+                   Margin="0,8,0,6"
+                   FontSize="12"
+                   Foreground="#6B7280"
+                   Text="{Binding PageInfoText}"/>
+
+        <Border Grid.Row="2"
+                CornerRadius="10"
+                BorderBrush="#E5EAF0"
+                BorderThickness="1"
+                Background="#FFFFFF"
+                Padding="10">
+            <Grid>
+                <TextBlock HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           Foreground="#9CA3AF"
+                           IsVisible="{Binding IsEmpty}"
+                           Text="暂无日志"/>
+                <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+                              VerticalScrollBarVisibility="Auto">
+                    <ItemsControl ItemsSource="{Binding Items}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="models:AppLogEntry">
+                                <Border Padding="0,6"
+                                        BorderBrush="#F0F2F6"
+                                        BorderThickness="0,0,0,1">
+                                    <Grid ColumnDefinitions="132,*"
+                                          ColumnSpacing="10">
+                                        <TextBlock Grid.Column="0"
+                                                   VerticalAlignment="Top"
+                                                   FontSize="12"
+                                                   Foreground="#6B7280"
+                                                   Text="{Binding TimeLocalText}"/>
+                                        <Button Grid.Column="1"
+                                                HorizontalAlignment="Stretch"
+                                                HorizontalContentAlignment="Left"
+                                                Background="Transparent"
+                                                BorderThickness="0"
+                                                Padding="4,2"
+                                                Cursor="Hand"
+                                                Command="{Binding $parent[Window].DataContext.CopyLineCommand}"
+                                                CommandParameter="{Binding}"
+                                                ToolTip.Tip="点击复制本条内容">
+                                            <TextBlock FontSize="13"
+                                                       Foreground="#2B303B"
+                                                       Text="{Binding Message}"
+                                                       TextWrapping="Wrap"/>
+                                        </Button>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </Grid>
+        </Border>
+
+        <TextBlock Grid.Row="3"
+                   Margin="0,8,0,0"
+                   HorizontalAlignment="Center"
+                   FontSize="12"
+                   Foreground="#0E7A43"
+                   IsVisible="{Binding HasToastText}"
+                   Text="{Binding ToastText}"/>
+        </Grid>
+
+        <Border ZIndex="20"
+                IsVisible="{Binding ShowClearConfirm}"
+                Background="#66000000">
+            <Border MinWidth="320"
+                    MaxWidth="420"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Padding="18"
+                    CornerRadius="12"
+                    Background="#FFFFFF"
+                    BorderBrush="#E5EAF0"
+                    BorderThickness="1"
+                    BoxShadow="0 12 32 0 #28000000">
+                <StackPanel Spacing="14">
+                    <TextBlock TextWrapping="Wrap"
+                               Foreground="#2B303B"
+                               Text="确定清空全部历史日志？此操作不可恢复。"/>
+                    <StackPanel HorizontalAlignment="Right"
+                                Orientation="Horizontal"
+                                Spacing="10">
+                        <Button Classes="chrome-text"
+                                Padding="14,6"
+                                Command="{Binding CancelClearCommand}"
+                                Content="取消"/>
+                        <Button Classes="popup-danger"
+                                Padding="14,6"
+                                Command="{Binding ConfirmClearCommand}"
+                                Content="确定清空"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Border>
+    </Grid>
+</Window>

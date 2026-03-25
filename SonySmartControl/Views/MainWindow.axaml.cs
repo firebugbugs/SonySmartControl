@@ -5,9 +5,11 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
+using Avalonia.Platform;
 using Avalonia.Visuals;
 using Avalonia.VisualTree;
 using Microsoft.Extensions.DependencyInjection;
+using SonySmartControl.Helpers;
 using SonySmartControl.Services.Platform;
 using SonySmartControl.ViewModels;
 
@@ -34,6 +36,21 @@ public partial class MainWindow : Window
         if (Application.Current is App app)
             app.Services.GetRequiredService<ITopLevelProvider>().SetTopLevel(this);
         SyncChromeWindowState();
+        ApplyTaskbarWindowIcon();
+    }
+
+    /// <summary>无边框窗口在部分 Windows 版本上需再次设置 HWND 图标，任务栏才显示自定义 ico。</summary>
+    private void ApplyTaskbarWindowIcon()
+    {
+        try
+        {
+            using var stream = AssetLoader.Open(new Uri(AppIconUris.WindowIcon));
+            Icon = new WindowIcon(stream);
+        }
+        catch
+        {
+            // 忽略
+        }
     }
 
     /// <summary>方向键切换回看图：具体规则在 ViewModel，此处只做焦点与路由。</summary>
@@ -147,12 +164,20 @@ public partial class MainWindow : Window
         await topLevel.Clipboard.SetTextAsync(text);
     }
 
-    private void OpenAuthorHomepage_OnClick(object? sender, RoutedEventArgs e)
+    private void OpenAuthorHomepage_OnClick(object? sender, RoutedEventArgs e) =>
+        OpenUrlInBrowser("https://www.cheems.online/");
+
+    private void OpenGithubRepo_OnClick(object? sender, RoutedEventArgs e) =>
+        OpenUrlInBrowser("https://github.com/firebugbugs/SonySmartControl");
+
+    private void OpenGiteeRepo_OnClick(object? sender, RoutedEventArgs e) =>
+        OpenUrlInBrowser("https://gitee.com/unbengable/SonySmartControl");
+
+    private static void OpenUrlInBrowser(string url)
     {
-        const string homepageUrl = "https://www.cheems.online/";
         Process.Start(new ProcessStartInfo
         {
-            FileName = homepageUrl,
+            FileName = url,
             UseShellExecute = true
         });
     }

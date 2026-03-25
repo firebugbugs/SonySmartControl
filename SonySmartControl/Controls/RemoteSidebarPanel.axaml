@@ -54,7 +54,6 @@
                 <Panel Margin="8,8,8,8">
                     <Grid RowDefinitions="Auto,Auto,*" RowSpacing="10" IsVisible="{Binding IsPhotoSidebarMode}" MinHeight="0">
                         <StackPanel Grid.Row="0" Spacing="8">
-                            <TextBlock FontWeight="SemiBold" Foreground="#1F2430" Text="遥控拍摄"/>
                             <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
                                 <Button Grid.Column="0"
                                         x:Name="FocusHoldButton"
@@ -77,26 +76,35 @@
                             </Grid>
                         </StackPanel>
 
-                        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="4">
-                            <Button Classes="sidebar-icon-tool"
+                        <Grid Grid.Row="1" ColumnDefinitions="Auto,Auto,*" ColumnSpacing="8" VerticalAlignment="Center">
+                            <Button Grid.Column="0"
+                                    Classes="sidebar-icon-tool"
                                     Command="{Binding ExpandAllSectionsCommand}"
                                     ToolTip.Tip="全部展开">
                                 <Path Width="18" Height="18" Stretch="Uniform"
                                       Stroke="#666666" StrokeThickness="1.65"
                                       Data="M 2 3 L 10 11 L 18 3 M 2 9 L 10 17 L 18 9"/>
                             </Button>
-                            <Button Classes="sidebar-icon-tool"
+                            <Button Grid.Column="1"
+                                    Classes="sidebar-icon-tool"
                                     Command="{Binding CollapseAllSectionsCommand}"
                                     ToolTip.Tip="全部收起">
                                 <Path Width="18" Height="18" Stretch="Uniform"
                                       Stroke="#666666" StrokeThickness="1.65"
                                       Data="M 2 15 L 10 7 L 18 15 M 2 9 L 10 1 L 18 9"/>
                             </Button>
-                        </StackPanel>
+                            <TextBox Grid.Column="2"
+                                     MinHeight="32"
+                                     VerticalAlignment="Center"
+                                     Watermark="搜索设置…"
+                                     Text="{Binding SidebarSettingsSearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                     ToolTip.Tip="按标题或常用项名称过滤下方设置区块；清空则显示全部。"/>
+                        </Grid>
 
                         <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" ClipToBounds="False">
                             <StackPanel Spacing="10">
                                 <Expander IsExpanded="{Binding SaveSectionExpanded, Mode=TwoWay}"
+                                          IsVisible="{Binding SidebarFilterSaveSectionVisible}"
                                           HorizontalAlignment="Stretch"
                                           HorizontalContentAlignment="Stretch">
                                     <Expander.Header>
@@ -127,11 +135,12 @@
                                     </StackPanel>
                                 </Expander>
 
-                                <Border IsVisible="{Binding ShootingPanelVisible}"
+                                <Border IsVisible="{Binding SidebarFilterShootingBlockVisible}"
                                         Opacity="{Binding ShootingPanelOpacity}"
                                         Padding="0,4,0,0">
                                     <StackPanel Spacing="10">
                                         <Expander IsExpanded="{Binding ExposureSectionExpanded, Mode=TwoWay}"
+                                                  IsVisible="{Binding SidebarFilterExposureSectionVisible}"
                                                   HorizontalAlignment="Stretch"
                                                   HorizontalContentAlignment="Stretch">
                                             <Expander.Header>
@@ -316,6 +325,7 @@
                                         </Expander>
 
                                         <Expander IsExpanded="{Binding FlashSectionExpanded, Mode=TwoWay}"
+                                                  IsVisible="{Binding SidebarFilterFlashSectionVisible}"
                                                   HorizontalAlignment="Stretch"
                                                   HorizontalContentAlignment="Stretch">
                                             <Expander.Header>
@@ -351,6 +361,7 @@
                                 </Border>
 
                                 <Expander IsExpanded="{Binding AuxDisplaySectionExpanded, Mode=TwoWay}"
+                                          IsVisible="{Binding SidebarFilterAuxDisplayVisible}"
                                           HorizontalAlignment="Stretch"
                                           HorizontalContentAlignment="Stretch">
                                     <Expander.Header>
@@ -387,6 +398,7 @@
                                 </Expander>
 
                                 <Expander IsExpanded="{Binding TimelapseSectionExpanded, Mode=TwoWay}"
+                                          IsVisible="{Binding SidebarFilterTimelapseSectionVisible}"
                                           HorizontalAlignment="Stretch"
                                           HorizontalContentAlignment="Stretch">
                                     <Expander.Header>

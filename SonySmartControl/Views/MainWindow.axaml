@@ -2,6 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:SonySmartControl.ViewModels"
         xmlns:controls="using:SonySmartControl.Controls"
+        xmlns:helpers="using:SonySmartControl.Helpers"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d" d:DesignWidth="1100" d:DesignHeight="760"
@@ -9,7 +10,7 @@
         x:Name="Win"
         x:DataType="vm:MainWindowViewModel"
         Title="索尼实时视窗"
-        Icon="avares://SonySmartControl/Assets/cheems.ico"
+        Icon="{x:Static helpers:AppIconUris.WindowIcon}"
         Width="1200" Height="760"
         MinWidth="720" MinHeight="520"
         WindowStartupLocation="CenterScreen"
@@ -97,21 +98,23 @@
                                        IsHitTestVisible="True"
                                        PointerPressed="AuthorInfoTrigger_OnPointerPressed"/>
                             <Button x:Name="CameraConnectionBadgeButton"
-                                    MinWidth="56"
-                                    Height="24"
-                                    Padding="10,0"
-                                    CornerRadius="12"
-                                    Background="{Binding CameraConnectionBadgeBackground}"
+                                    MinWidth="36"
+                                    MinHeight="28"
+                                    Height="28"
+                                    Padding="4,0"
+                                    CornerRadius="14"
+                                    Background="#FFFFFF"
+                                    BorderBrush="{Binding CameraConnectionBadgeBorderBrush}"
                                     VerticalAlignment="Center"
-                                    IsEnabled="{Binding IsSessionActive}"
                                     Focusable="False"
-                                    Classes="chrome-text"
+                                    Classes="chrome-text camera-status-badge"
                                     Command="{Binding ToggleCameraActionsPopupCommand}"
+                                    Cursor="Hand"
                                     ToolTip.Tip="{Binding CameraConnectionTooltip}">
-                                <TextBlock Text="{Binding CameraConnectionBadgeText}"
+                                <TextBlock Text="&#xE6F6;"
+                                           FontFamily="avares://SonySmartControl/Assets/Fonts/iconfont.ttf#CheemsFont"
                                            Foreground="{Binding CameraConnectionBadgeForeground}"
-                                           FontSize="12"
-                                           FontWeight="SemiBold"
+                                           FontSize="20"
                                            HorizontalAlignment="Center"
                                            VerticalAlignment="Center"/>
                             </Button>
@@ -145,7 +148,7 @@
                                     ToolTip.Tip="最大化">
                                 <Panel>
                                     <TextBlock x:Name="MaximizeGlyph"
-                                          Text="&#xEB99;"
+                                          Text="&#xE6F7;"
                                           FontFamily="avares://SonySmartControl/Assets/Fonts/iconfont.ttf#CheemsFont"
                                           FontSize="14"
                                           Foreground="#5C6370"
@@ -257,28 +260,40 @@
                                             Content="复制"/>
                                 </Grid>
                             </Border>
-                            <Button HorizontalAlignment="Stretch"
-                                    Height="32"
-                                    Background="#EEF4FF"
-                                    BorderBrush="#D6E3FF"
-                                    BorderThickness="1"
-                                    CornerRadius="8"
-                                    Click="OpenAuthorHomepage_OnClick">
-                                <StackPanel Orientation="Horizontal"
-                                            HorizontalAlignment="Center"
-                                            VerticalAlignment="Center"
-                                            Spacing="6">
-                                    <TextBlock Text="&#xE6AC;"
+                            <StackPanel Orientation="Horizontal"
+                                        HorizontalAlignment="Center"
+                                        Spacing="2">
+                                <Button Classes="author-icon-link"
+                                        Cursor="Hand"
+                                        Click="OpenAuthorHomepage_OnClick"
+                                        ToolTip.Tip="前往作者主页">
+                                    <TextBlock Text="&#xE73B;"
                                                FontFamily="avares://SonySmartControl/Assets/Fonts/iconfont.ttf#CheemsFont"
-                                               FontSize="14"
+                                               FontSize="20"
                                                Foreground="#1F5FAF"
                                                VerticalAlignment="Center"/>
-                                    <TextBlock Text="前往作者主页"
-                                               Foreground="#1F5FAF"
-                                               FontWeight="SemiBold"
+                                </Button>
+                                <Button Classes="author-icon-link"
+                                        Cursor="Hand"
+                                        Click="OpenGithubRepo_OnClick"
+                                        ToolTip.Tip="GitHub 仓库">
+                                    <TextBlock Text="&#xE603;"
+                                               FontFamily="avares://SonySmartControl/Assets/Fonts/iconfont.ttf#CheemsFont"
+                                               FontSize="20"
+                                               Foreground="#24292F"
                                                VerticalAlignment="Center"/>
-                                </StackPanel>
-                            </Button>
+                                </Button>
+                                <Button Classes="author-icon-link"
+                                        Cursor="Hand"
+                                        Click="OpenGiteeRepo_OnClick"
+                                        ToolTip.Tip="Gitee 仓库">
+                                    <TextBlock Text="&#xE6E3;"
+                                               FontFamily="avares://SonySmartControl/Assets/Fonts/iconfont.ttf#CheemsFont"
+                                               FontSize="20"
+                                               Foreground="#C71D23"
+                                               VerticalAlignment="Center"/>
+                                </Button>
+                            </StackPanel>
                         </StackPanel>
                     </Border>
                 </Popup>
@@ -539,6 +554,17 @@
                                 Content="断开"
                                 Command="{Binding DisconnectCommand}"
                                 IsEnabled="{Binding IsDisconnectEnabled}"/>
+                        <Button Classes="author-icon-link"
+                                Cursor="Hand"
+                                Padding="8,4"
+                                Command="{Binding OpenLogHistoryCommand}"
+                                ToolTip.Tip="历史日志">
+                            <TextBlock Text="&#xE715;"
+                                       FontFamily="avares://SonySmartControl/Assets/Fonts/iconfont.ttf#CheemsFont"
+                                       FontSize="18"
+                                       Foreground="#1F5FAF"
+                                       VerticalAlignment="Center"/>
+                        </Button>
                         <TextBlock VerticalAlignment="Center"
                                    Text="{Binding StatusMessage}"
                                    TextWrapping="Wrap"

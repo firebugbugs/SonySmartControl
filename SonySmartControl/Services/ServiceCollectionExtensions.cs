@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using SonySmartControl.Services.Camera;
+using SonySmartControl.Services.Logging;
 using SonySmartControl.Services.Platform;
 using SonySmartControl.Services.Settings;
 using SonySmartControl.ViewModels;
@@ -17,6 +18,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ICameraPreviewSessionFactory, CrSdkCameraPreviewSessionFactory>();
         services.AddSingleton<ISdCardMediaFormatService, CrSdkSdCardMediaFormatService>();
         services.AddSingleton<ICrSdkShootingWriteService, CrSdkShootingWriteService>();
+        services.AddSingleton<IAppLogService, AppLogService>();
+        services.AddTransient<LogHistoryViewModel>();
         services.AddSingleton<MainWindowViewModel>();
         return services;
     }

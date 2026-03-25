@@ -6,6 +6,7 @@ using System.Globalization;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.DependencyInjection;
 using Avalonia;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
@@ -17,9 +18,11 @@ using CommunityToolkit.Mvvm.Input;
 using SonySmartControl.Helpers;
 using SonySmartControl.Interop;
 using SonySmartControl.Services.Camera;
+using SonySmartControl.Services.Logging;
 using SonySmartControl.Services.Platform;
 using SonySmartControl.Services.Settings;
 using SonySmartControl.Settings;
+using SonySmartControl.Views;
 
 namespace SonySmartControl.ViewModels;
 
@@ -30,6 +33,9 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     private readonly ICameraPreviewSessionFactory _cameraPreviewSessionFactory;
     private readonly ISdCardMediaFormatService _sdCardMediaFormat;
     private readonly ICrSdkShootingWriteService _crSdkShootingWrite;
+    private readonly IAppLogService _appLogService;
+    private readonly IServiceProvider _serviceProvider;
+    private readonly ITopLevelProvider _topLevelProvider;
 
     private readonly bool _persistEnabled;
 
@@ -109,10 +115,13 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     [NotifyPropertyChangedFor(nameof(IsConnectEnabled))]
     [NotifyPropertyChangedFor(nameof(IsDisconnectEnabled))]
     [NotifyPropertyChangedFor(nameof(ShootingPanelVisible))]
+    [NotifyPropertyChangedFor(nameof(SidebarFilterShootingBlockVisible))]
+    [NotifyPropertyChangedFor(nameof(SidebarFilterExposureSectionVisible))]
+    [NotifyPropertyChangedFor(nameof(SidebarFilterFlashSectionVisible))]
     [NotifyPropertyChangedFor(nameof(IsSdkAfFramesOverlayVisible))]
     [NotifyPropertyChangedFor(nameof(CameraConnectionBadgeText))]
-    [NotifyPropertyChangedFor(nameof(CameraConnectionBadgeBackground))]
     [NotifyPropertyChangedFor(nameof(CameraConnectionBadgeForeground))]
+    [NotifyPropertyChangedFor(nameof(CameraConnectionBadgeBorderBrush))]
     [NotifyPropertyChangedFor(nameof(CameraConnectionTooltip))]
     private bool _isSessionActive;
 
@@ -120,8 +129,8 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsConnectEnabled))]
     [NotifyPropertyChangedFor(nameof(CameraConnectionBadgeText))]
-    [NotifyPropertyChangedFor(nameof(CameraConnectionBadgeBackground))]
     [NotifyPropertyChangedFor(nameof(CameraConnectionBadgeForeground))]
+    [NotifyPropertyChangedFor(nameof(CameraConnectionBadgeBorderBrush))]
     [NotifyPropertyChangedFor(nameof(CameraConnectionTooltip))]
     private bool _isConnecting;
 
@@ -191,12 +200,77 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
 
     public bool ShootingPanelVisible => IsSessionActive;
 
+    private static readonly string[] SidebarSaveFilterKeywords =
+    {
+        "保存设置", "保存", "目录", "浏览", "前缀", "文件名", "DSC",
+    };
+
+    private static readonly string[] SidebarExposureFilterKeywords =
+    {
+        "拍照设置", "对焦", "拍摄", "JPEG", "HEIF", "RAW", "格式", "压缩",
+        "质量", "尺寸", "横纵", "曝光", "光圈", "快门", "ISO", "补偿",
+        "曝光模式", "驱动", "连拍", "延时", "机械", "电子", "快门类型",
+        "文件格式", "JPEG/HEIF"
+    };
+
+    private static readonly string[] SidebarFlashFilterKeywords =
+    {
+        "闪光灯设置", "闪光", "闪光模式", "闪光补偿",
+    };
+
+    private static readonly string[] SidebarAuxFilterKeywords =
+    {
+        "辅助显示", "直方图", "辅助线", "三分", "十字", "对角", "安全", "构图",
+    };
+
+    private static readonly string[] SidebarTimelapseFilterKeywords =
+    {
+        "延时摄影", "延时", "间隔", "张数", "无限制", "暂停", "继续", "停止", "开始",
+    };
+
+    private bool SidebarFilterIsEmpty() => string.IsNullOrWhiteSpace(SidebarSettingsSearchText);
+
+    private bool SidebarFilterMatches(params string[] keywords)
+    {
+        var q = SidebarSettingsSearchText?.Trim() ?? "";
+        if (q.Length == 0) return true;
+        foreach (var k in keywords)
+        {
+            if (k.Contains(q, StringComparison.OrdinalIgnoreCase)) return true;
+        }
+        return false;
+    }
+
+    public bool SidebarFilterSaveSectionVisible => SidebarFilterMatches(SidebarSaveFilterKeywords);
+
+    public bool SidebarFilterExposureSectionVisible =>
+        ShootingPanelVisible && SidebarFilterMatches(SidebarExposureFilterKeywords);
+
+    public bool SidebarFilterFlashSectionVisible =>
+        ShootingPanelVisible && SidebarFilterMatches(SidebarFlashFilterKeywords);
+
+    public bool SidebarFilterShootingBlockVisible =>
+        ShootingPanelVisible &&
+        (SidebarFilterIsEmpty() ||
+         SidebarFilterMatches(SidebarExposureFilterKeywords) ||
+         SidebarFilterMatches(SidebarFlashFilterKeywords));
+
+    public bool SidebarFilterAuxDisplayVisible => SidebarFilterMatches(SidebarAuxFilterKeywords);
+
+    public bool SidebarFilterTimelapseSectionVisible => SidebarFilterMatches(SidebarTimelapseFilterKeywords);
+
     public string CameraConnectionBadgeText =>
         IsConnecting ? "连接中" : IsSessionActive ? "已连接" : "未连接";
-    public string CameraConnectionBadgeBackground =>
-        IsConnecting ? "#FFF6DE" : IsSessionActive ? "#DDF6E9" : "#ECEFF4";
+    /// <summary>徽标背景固定为白底，由 <see cref="CameraConnectionBadgeBorderBrush"/> 与前景色区分状态。</summary>
+    public string CameraConnectionBadgeBackground => "#FFFFFF";
+
     public string CameraConnectionBadgeForeground =>
-        IsConnecting ? "#9A6A00" : IsSessionActive ? "#0E7A43" : "#6B7280";
+        IsConnecting ? "#9A6A00" : IsSessionActive ? "#0E7A43" : "#3F4A5C";
+
+    /// <summary>徽标描边：未连接时略加深，与标题栏区分更明显。</summary>
+    public string CameraConnectionBadgeBorderBrush =>
+        IsConnecting ? "#E5C266" : IsSessionActive ? "#7BC49A" : "#A8B2C2";
+
     private string CaptureFormatLabel =>
         CaptureFormatIndex switch
         {
@@ -222,6 +296,17 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
 
     [ObservableProperty] private bool _auxDisplaySectionExpanded = true;
     [ObservableProperty] private bool _timelapseSectionExpanded = true;
+
+    /// <summary>侧栏设置列表搜索过滤（空则显示全部区块）。</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SidebarFilterSaveSectionVisible))]
+    [NotifyPropertyChangedFor(nameof(SidebarFilterShootingBlockVisible))]
+    [NotifyPropertyChangedFor(nameof(SidebarFilterExposureSectionVisible))]
+    [NotifyPropertyChangedFor(nameof(SidebarFilterFlashSectionVisible))]
+    [NotifyPropertyChangedFor(nameof(SidebarFilterAuxDisplayVisible))]
+    [NotifyPropertyChangedFor(nameof(SidebarFilterTimelapseSectionVisible))]
+    private string _sidebarSettingsSearchText = "";
+
     [ObservableProperty] private bool _showFormatSdCardConfirm;
 
     /// <summary>已连接徽标弹出的相机操作浮层（与 <see cref="ToggleCameraActionsPopupCommand"/> 联动）。</summary>
@@ -273,13 +358,19 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         IFolderPickerService folderPicker,
         ICameraPreviewSessionFactory cameraPreviewSessionFactory,
         ISdCardMediaFormatService sdCardMediaFormat,
-        ICrSdkShootingWriteService crSdkShootingWrite)
+        ICrSdkShootingWriteService crSdkShootingWrite,
+        IAppLogService appLogService,
+        IServiceProvider serviceProvider,
+        ITopLevelProvider topLevelProvider)
     {
         _userCameraSettings = userCameraSettings;
         _folderPicker = folderPicker;
         _cameraPreviewSessionFactory = cameraPreviewSessionFactory;
         _sdCardMediaFormat = sdCardMediaFormat;
         _crSdkShootingWrite = crSdkShootingWrite;
+        _appLogService = appLogService;
+        _serviceProvider = serviceProvider;
+        _topLevelProvider = topLevelProvider;
 
         var s = _userCameraSettings.Load();
         _persistEnabled = false;
@@ -294,6 +385,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         _guideOverlayIndex = s.GuideOverlayIndex;
         _persistEnabled = true;
         RefreshRecentGalleryFromDisk();
+        _appLogService.Append(StatusMessage);
     }
 
     /// <summary>设计器与 MainWindow.axaml 预览用默认实现。</summary>
@@ -303,9 +395,17 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             new AvaloniaFolderPickerService(new TopLevelProvider()),
             new CrSdkCameraPreviewSessionFactory(),
             new CrSdkSdCardMediaFormatService(),
-            new CrSdkShootingWriteService())
+            new CrSdkShootingWriteService(),
+            DesignTimeAppLog,
+            new ServiceCollection()
+                .AddSingleton<IAppLogService>(DesignTimeAppLog)
+                .AddTransient<LogHistoryViewModel>()
+                .BuildServiceProvider(),
+            new TopLevelProvider())
     {
     }
+
+    private static readonly AppLogService DesignTimeAppLog = new();
 
     /// <summary>主窗口将左右方向键交给 ViewModel；在文本框内聚焦时不应抢键。</summary>
     public bool TryHandleGalleryArrowNavigation(Key key, object? focusedElement)
@@ -324,12 +424,25 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     [RelayCommand]
     private async Task ToggleCameraActionsPopupAsync()
     {
+        if (!IsSessionActive)
+            return;
         IsConnectedActionsPopupOpen = !IsConnectedActionsPopupOpen;
         if (IsConnectedActionsPopupOpen)
         {
             ShowFormatSdCardConfirm = false;
             await RefreshSdCardUsageAsync().ConfigureAwait(true);
         }
+    }
+
+    [RelayCommand]
+    private void OpenLogHistory()
+    {
+        var vm = _serviceProvider.GetRequiredService<LogHistoryViewModel>();
+        var win = new LogHistoryWindow { DataContext = vm };
+        if (_topLevelProvider.GetTopLevel() is Window owner)
+            win.Show(owner);
+        else
+            win.Show();
     }
 
     [RelayCommand]
