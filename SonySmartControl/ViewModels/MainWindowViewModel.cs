@@ -38,6 +38,11 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     private readonly IServiceProvider _serviceProvider;
     private readonly ITopLevelProvider _topLevelProvider;
 
+    // ---- 互斥窗口：设备搜索 / 日志窗口（同一时间只允许打开一个）----
+    private readonly object _exclusiveToolWindowGate = new();
+    private Window? _exclusiveToolWindow;
+    private string? _exclusiveToolWindowTitle;
+
     private bool _persistEnabled;
     private long? _currentProfileId;
 
@@ -606,8 +611,12 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     [RelayCommand]
     private void OpenLogHistory()
     {
+        if (TryActivateExclusiveToolWindow("日志窗口"))
+            return;
+
         var vm = _serviceProvider.GetRequiredService<LogHistoryViewModel>();
         var win = new LogHistoryWindow { DataContext = vm };
+        RegisterExclusiveToolWindow(win, "日志窗口");
         if (_topLevelProvider.GetTopLevel() is Window owner)
             win.Show(owner);
         else
@@ -1154,52 +1163,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     /// <summary>预览指针是否仍视为按下（避免 Released 与 CaptureLost 各触发一次时世代连加两次）。</summary>
     private bool _previewFocusPointerDown;
 
-    // ---- MF 下相对对焦：滚轮操作 ----
-    private readonly object _relativeFocusWheelStopGate = new();
-    private CancellationTokenSource? _relativeFocusWheelStopCts;
-    private const int RelativeFocusWheelStopDelayMs = 220;
-    
-    // Far: 0x0001..0x7FFF（符号为正）
-    private static readonly short[] RelativeFocusSpeedFarInt16 =
-    [
-        0x0001,
-        0x2000,
-        0x4000,
-        0x6000,
-        0x7FFF,
-    ];
-
-    // Near: 0xFFFF..0x8000（符号为负）
-    private static readonly short[] RelativeFocusSpeedNearInt16 =
-    [
-        unchecked((short)0xFFFF),
-        unchecked((short)0xE000),
-        unchecked((short)0xC000),
-        unchecked((short)0xA000),
-        unchecked((short)0x8000),
-    ];
-
-    private void CancelRelativeFocusWheelStop()
-    {
-        lock (_relativeFocusWheelStopGate)
-        {
-            try
-            {
-                _relativeFocusWheelStopCts?.Cancel();
-            }
-            catch
-            {
-            }
-            try
-            {
-                _relativeFocusWheelStopCts?.Dispose();
-            }
-            catch
-            {
-            }
-            _relativeFocusWheelStopCts = null;
-        }
-    }
+    // 相对对焦功能已移除（不再通过滚轮驱动镜头 MF 对焦）。
 
     /// <summary>连拍：已向机身发送 Release Down 且尚未 Up（与半按并存时需先 HoldEnd 再解锁）。</summary>
     private bool _captureBurstShutterDownActive;
@@ -1238,8 +1202,6 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     {
         if (!CanCrSdkCameraOps() || _session == null)
             return;
-
-        CancelRelativeFocusWheelStop();
 
         if (_captureTaskActive)
             return;
@@ -1316,8 +1278,6 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     {
         if (!CanCrSdkCameraOps() || _session == null)
             return;
-
-        CancelRelativeFocusWheelStop();
 
         if (_captureTaskActive)
         {
@@ -2027,23 +1987,83 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     [RelayCommand]
     private void OpenDeviceSearch()
     {
+        if (TryActivateExclusiveToolWindow("设备搜索"))
+            return;
+
         var win = new DeviceSearchWindow();
         var vm = new DeviceSearchViewModel(this, () => win.Close(), _appLogService);
         win.DataContext = vm;
+        RegisterExclusiveToolWindow(win, "设备搜索");
         if (_topLevelProvider.GetTopLevel() is Window owner)
             win.Show(owner);
         else
             win.Show();
     }
 
+    private bool TryActivateExclusiveToolWindow(string requestedTitle)
+    {
+        lock (_exclusiveToolWindowGate)
+        {
+            if (_exclusiveToolWindow == null)
+                return false;
+
+            try
+            {
+                if (!_exclusiveToolWindow.IsVisible)
+                {
+                    _exclusiveToolWindow = null;
+                    _exclusiveToolWindowTitle = null;
+                    return false;
+                }
+
+                if (_exclusiveToolWindow.WindowState == WindowState.Minimized)
+                    _exclusiveToolWindow.WindowState = WindowState.Normal;
+                _exclusiveToolWindow.Activate();
+
+                var opened = _exclusiveToolWindowTitle ?? "窗口";
+                StatusMessage = $"已打开「{opened}」，不再重复打开「{requestedTitle}」。";
+                return true;
+            }
+            catch
+            {
+                _exclusiveToolWindow = null;
+                _exclusiveToolWindowTitle = null;
+                return false;
+            }
+        }
+    }
+
+    private void RegisterExclusiveToolWindow(Window win, string title)
+    {
+        lock (_exclusiveToolWindowGate)
+        {
+            _exclusiveToolWindow = win;
+            _exclusiveToolWindowTitle = title;
+        }
+
+        win.Closed += (_, _) =>
+        {
+            lock (_exclusiveToolWindowGate)
+            {
+                if (ReferenceEquals(_exclusiveToolWindow, win))
+                {
+                    _exclusiveToolWindow = null;
+                    _exclusiveToolWindowTitle = null;
+                }
+            }
+        };
+    }
+
     /// <summary>由设备搜索窗口调用：连接用户在列表中选择的设备（CrSDK 枚举索引）。</summary>
-    public async Task<bool> ConnectToCameraAsync(int deviceIndex)
+    public async Task<bool> ConnectToCameraAsync(int deviceIndex, bool isIp = false)
     {
         if (_session != null || IsConnecting)
             return false;
 
         IsConnecting = true;
-        StatusMessage = "正在连接相机，请稍候…";
+        StatusMessage = isIp
+            ? "正在通过 IP 连接相机：请在相机端确认配对/连接提示（最长等待约 60 秒）…"
+            : "正在连接相机，请稍候…";
         ConnectedCameraModelName = "未知";
         ConnectedCameraLensModelName = "暂未识别";
         ConnectedCameraBatteryLevelText = "暂未识别";
@@ -2077,7 +2097,11 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
                     }
                 }
 
-                StatusMessage = ex is OperationCanceledException ? "连接已取消。" : ex.Message;
+                var debug = SonyCrBridgeNative.TryGetLastConnectDebugUtf8();
+                if (!string.IsNullOrWhiteSpace(debug))
+                    StatusMessage = (ex is OperationCanceledException ? "连接已取消。" : ex.Message) + $"（Connect调试：{debug}）";
+                else
+                    StatusMessage = ex is OperationCanceledException ? "连接已取消。" : ex.Message;
                 return false;
             }
 
@@ -2126,6 +2150,24 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
                 await ShutdownCameraSessionAsync().ConfigureAwait(true);
                 return false;
             }
+
+            // 连接成功但长时间收不到首帧时，给出 bridge 侧诊断，便于定位（例如 LiveView 未开启/防火墙/机身状态）。
+            _ = Task.Run(
+                async () =>
+                {
+                    await Task.Delay(2000).ConfigureAwait(false);
+                    if (!IsSessionActive || PreviewImage != null)
+                        return;
+                    var dbg = SonyCrBridgeNative.TryGetLastLiveViewDebugUtf8();
+                    if (!string.IsNullOrWhiteSpace(dbg))
+                    {
+                        // InvokeAsync 返回 DispatcherOperation<T>，不支持 ConfigureAwait。
+                        await Dispatcher.UIThread.InvokeAsync(() =>
+                            StatusMessage =
+                                "已连接相机，但 2 秒内未收到取景帧。多半是机身 LiveView 尚未启用/尚未就绪，请稍等或检查相机端「遥控拍摄/实时取景」相关设置。"
+                                + $"（LiveView调试：{dbg}）");
+                    }
+                });
 
             return true;
         }
@@ -2183,14 +2225,38 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     [RelayCommand]
     private async Task Disconnect()
     {
-        if (_session == null)
+        try
         {
-            ClearPreview();
-            return;
-        }
+            if (_session == null)
+            {
+                ClearPreview();
+                return;
+            }
 
-        await ShutdownCameraSessionAsync().ConfigureAwait(true);
-        StatusMessage = "已断开。";
+            await ShutdownCameraSessionAsync().ConfigureAwait(true);
+            StatusMessage = "已断开。";
+        }
+        catch (Exception ex)
+        {
+            // 断开过程中出现异常时，保持应用不崩溃，并尽力恢复到“未连接”状态。
+            try
+            {
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    ClearPreview();
+                    IsSessionActive = false;
+                    ConnectedCameraModelName = "未知";
+                    ConnectedCameraLensModelName = "暂未识别";
+                    ConnectedCameraBatteryLevelText = "暂未识别";
+                    SdCardUsageDebugText = "";
+                });
+            }
+            catch
+            {
+            }
+
+            StatusMessage = "断开连接失败（已尽力清理本地状态）: " + ex.Message;
+        }
     }
 
     private static string NormalizeCameraModelName(string? raw)
@@ -2477,74 +2543,6 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         ShowFocusReticle = false;
         SdkAfFocusFrames = null;
         _previewFocusPointerDown = false;
-    }
-
-    /// <summary>
-    /// 预览滚轮相对对焦：仅在手动对焦（MF）启用相对对焦速度后，且相机会话可用时生效。
-    /// 上滚=对焦远处；下滚=对焦近处。
-    /// </summary>
-    public Task OnPreviewRelativeFocusWheelAsync(double deltaY)
-    {
-        if (!CanCrSdkCameraOps())
-            return Task.CompletedTask;
-        if (!RelativeFocusSpeedEnabled)
-            return Task.CompletedTask;
-
-        if (deltaY == 0)
-            return Task.CompletedTask;
-
-        var toFar = deltaY > 0;
-
-        var idx = SelectedRelativeFocusSpeedIndex;
-        if (idx < 0 || idx >= RelativeFocusSpeedFarInt16.Length)
-            return Task.CompletedTask;
-
-        // 相对对焦：方向与速度都编码进 Int16 数值（符号位决定远近）。
-        var encoded = toFar ? RelativeFocusSpeedFarInt16[idx] : RelativeFocusSpeedNearInt16[idx];
-
-        try
-        {
-            SonyCrSdk.EnsurePriorityKeyPcRemote();
-            SonyCrSdk.ExecuteControlCodeValue(
-                CrSdkControlCodes.FocusOperationWithInt16,
-                unchecked((ulong)(ushort)encoded));
-        }
-        catch (Exception ex)
-        {
-            StatusMessage = "相对对焦失败: " + ex.Message;
-            return Task.CompletedTask;
-        }
-
-        CancellationTokenSource localCts;
-        lock (_relativeFocusWheelStopGate)
-        {
-            _relativeFocusWheelStopCts?.Cancel();
-            _relativeFocusWheelStopCts?.Dispose();
-            _relativeFocusWheelStopCts = new CancellationTokenSource();
-            localCts = _relativeFocusWheelStopCts;
-        }
-
-        // 让镜头在用户停止滚轮后短暂延时停止（避免只靠“停止”命令导致手感抖动）。
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                await Task.Delay(RelativeFocusWheelStopDelayMs, localCts.Token).ConfigureAwait(true);
-                if (!RelativeFocusSpeedEnabled)
-                    return;
-                // 取消当前相对对焦动作，让镜头停住。
-                SonyCrSdk.ExecuteControlCodeValue(CrSdkControlCodes.CancelFocusPosition, 0);
-            }
-            catch (TaskCanceledException)
-            {
-            }
-            catch (Exception ex)
-            {
-                StatusMessage = "停止相对对焦失败: " + ex.Message;
-            }
-        });
-
-        return Task.CompletedTask;
     }
 
     public async Task OnPreviewTappedAsync(Point positionInBorder, Size borderSize)

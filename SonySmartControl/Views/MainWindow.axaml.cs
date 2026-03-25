@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System;
+using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
@@ -267,6 +269,20 @@ public partial class MainWindow : Window
         {
             _allowWindowClose = true;
             window.Close();
+
+            // CrSDK 在部分环境下会遗留非后台线程，导致窗口关闭后进程无法自然退出。
+            // 这里做兜底：短延时后强制结束进程，确保“关闭=退出”。
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    Thread.Sleep(600);
+                    Environment.Exit(0);
+                }
+                catch
+                {
+                }
+            });
         }
     }
 }

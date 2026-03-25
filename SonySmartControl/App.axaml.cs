@@ -37,7 +37,8 @@ public partial class App : Application
             {
                 DataContext = Services.GetRequiredService<MainWindowViewModel>(),
             };
-            // CrSDK 全局释放由会话 Dispose（SonyCr_Release）完成；此处不再调用，避免与「断开」后重复 Release 导致 native 异常。
+            // 注意：部分机型/镜头组合在 SonyCr_Release 期间可能发生 native 访问冲突（0xC0000005）。
+            // 当前策略：会话仅做 Disconnect，不主动调用 SonyCr_Release，避免「断开」时闪退。
         }
 
         base.OnFrameworkInitializationCompleted();

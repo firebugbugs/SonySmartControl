@@ -154,14 +154,6 @@
                                                 <controls:WheelPickerCombo ItemsSource="{Binding FocusModeChoices}"
                                                                            SelectedIndex="{Binding SelectedFocusModeIndex, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                                                            IsEnabled="{Binding FocusModeEnabled}"/>
-                                                <TextBlock Text="相对对焦速度"
-                                                           ToolTip.Tip="仅在手动对焦（MF）下启用：把鼠标放到预览画面滚轮，上滚=对焦远处，下滚=对焦近处。"
-                                                           IsVisible="{Binding RelativeFocusSpeedEnabled}"/>
-                                                <controls:WheelPickerCombo ItemsSource="{Binding RelativeFocusSpeedChoices}"
-                                                                           SelectedIndex="{Binding SelectedRelativeFocusSpeedIndex, Mode=TwoWay}"
-                                                                           IsVisible="{Binding RelativeFocusSpeedEnabled}"
-                                                                           IsEnabled="{Binding RelativeFocusSpeedEnabled}"
-                                                                           WheelAdjustEnabled="False"/>
 
                                                 <TextBlock Text="拍摄方式"
                                                            ToolTip.Tip="单张 / 连拍 / 延时自拍，对应机身驱动模式（CrDeviceProperty_DriveMode）。连拍与延时下可选具体速度或秒数。"/>

@@ -100,7 +100,8 @@ public partial class DeviceSearchViewModel : ViewModelBase
 
         _appLogService.Append(
             $"设备搜索：用户选择连接 [{SelectedDevice.OrdinalLabel}] {SelectedDevice.ModelName} ({SelectedDevice.ConnectionTypeText}/{SelectedDevice.EndpointText})。");
-        var ok = await _main.ConnectToCameraAsync(SelectedDevice.Index).ConfigureAwait(true);
+        var isIp = string.Equals(SelectedDevice.ConnectionTypeText, "IP", StringComparison.OrdinalIgnoreCase);
+        var ok = await _main.ConnectToCameraAsync(SelectedDevice.Index, isIp).ConfigureAwait(true);
         _appLogService.Append(
             ok
                 ? $"设备搜索：连接成功 [{SelectedDevice.OrdinalLabel}] {SelectedDevice.ModelName}。"

@@ -14,8 +14,6 @@ public sealed class CrSdkCameraPreviewSession : ICameraPreviewSession
 
     private readonly object _gate = new();
     private bool _sdkConnected;
-    /// <summary>仅在 <c>ConnectRemoteByIndex</c> 成功之后为 true；失败路径下不调用 <see cref="SonyCrBridgeNative.TryReleaseSdk"/>，避免 SonyCr_Release 在异常状态下长时间阻塞或闪退。</summary>
-    private bool _shouldReleaseSdkOnDispose;
     private CancellationTokenSource? _cts;
     private Task? _loopTask;
     public string? ConnectedCameraModel { get; private set; }
@@ -40,15 +38,10 @@ public sealed class CrSdkCameraPreviewSession : ICameraPreviewSession
                         if (st != (int)SonyCrStatus.Ok)
                             throw CrEx(st, "SonyCr_Init");
                         initOk = true;
-                        // CrSDK 全局状态已初始化：即使后续枚举/连接失败，也应在 Dispose 里释放，避免后台线程残留导致进程无法退出。
-                        _shouldReleaseSdkOnDispose = true;
 
                         st = SonyCrBridgeNative.SonyCr_EnumCameraDevicesRefresh();
                         if (st != (int)SonyCrStatus.Ok)
                         {
-                            // 枚举失败（如 -3）时，很多情况下仍会启动后台线程；这里先尝试释放全局状态以避免关窗后“残留线程”。
-                            if (initOk)
-                                SonyCrBridgeNative.TryReleaseSdk();
                             throw CrEx(st, "SonyCr_EnumCameraDevicesRefresh");
                         }
 
@@ -477,17 +470,6 @@ public sealed class CrSdkCameraPreviewSession : ICameraPreviewSession
         catch
         {
             // 断开或后台 Live View 循环异常时仍须尽力释放 native，避免向上冒泡导致界面任务崩溃。
-        }
-
-        if (_shouldReleaseSdkOnDispose)
-        {
-            try
-            {
-                SonyCrBridgeNative.TryReleaseSdk();
-            }
-            catch
-            {
-            }
         }
     }
 

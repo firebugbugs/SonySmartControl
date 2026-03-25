@@ -73,6 +73,12 @@ SONY_CR_API SonyCrStatus SonyCr_GetCameraConnectionTypeUtf8Length(int index, int
 SONY_CR_API SonyCrStatus SonyCr_GetCameraEndpointUtf8(int index, char* buffer, int bufferSizeBytes);
 SONY_CR_API SonyCrStatus SonyCr_GetCameraEndpointUtf8Length(int index, int* outLengthBytes);
 
+/**
+ * 查询「相对对焦（Int16）」是否可用（CrDeviceProperty_FocusOperationWithInt16EnableStatus）。
+ * outEnable: 0=Disable, 1=Enable
+ */
+SONY_CR_API SonyCrStatus SonyCr_GetFocusOperationWithInt16EnableStatus(int* outEnable);
+
 /*
  * 以 Remote 模式连接相机（SCRSDK::Connect + CrSdkControlMode_Remote）。
  * 需先 SonyCr_EnumCameraDevicesRefresh；成功后回调 OnConnected 再开启 Live View。
@@ -170,6 +176,12 @@ SONY_CR_API SonyCrStatus SonyCr_GetLastSdUsageDebugUtf8(char* buffer, int buffer
 
 /** 获取最近一次“拍照后拉取文件”诊断文本（UTF-8，含结尾\0）。 */
 SONY_CR_API SonyCrStatus SonyCr_GetLastCapturePullDebugUtf8(char* buffer, int bufferSizeBytes, int* outWritten);
+
+/** 获取最近一次 Connect 的诊断文本（UTF-8，含结尾\0）。 */
+SONY_CR_API SonyCrStatus SonyCr_GetLastConnectDebugUtf8(char* buffer, int bufferSizeBytes, int* outWritten);
+
+/** 获取最近一次 LiveView 拉帧诊断文本（UTF-8，含结尾\0）。 */
+SONY_CR_API SonyCrStatus SonyCr_GetLastLiveViewDebugUtf8(char* buffer, int bufferSizeBytes, int* outWritten);
 
 /**
  * 对应 SCRSDK::SetSaveInfo（遥控拍摄保存到 PC 的路径/前缀）。

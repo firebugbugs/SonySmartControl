@@ -105,47 +105,4 @@ public static class PreviewFocusGestureBehavior
     }
 }
 
-/// <summary>预览区鼠标滚轮：在 MF（手动对焦）下做相对对焦（上滚=远处，下滚=近处）。</summary>
-public static class PreviewRelativeFocusWheelBehavior
-{
-    public static readonly AttachedProperty<bool> IsEnabledProperty =
-        AvaloniaProperty.RegisterAttached<Border, bool>(
-            "IsRelativeFocusWheelEnabled",
-            typeof(PreviewRelativeFocusWheelBehavior));
-
-    static PreviewRelativeFocusWheelBehavior()
-    {
-        IsEnabledProperty.Changed.AddClassHandler<Border>(OnIsEnabledChanged);
-    }
-
-    public static bool GetIsRelativeFocusWheelEnabled(Border element) => element.GetValue(IsEnabledProperty);
-
-    public static void SetIsRelativeFocusWheelEnabled(Border element, bool value) =>
-        element.SetValue(IsEnabledProperty, value);
-
-    private static void OnIsEnabledChanged(Border border, AvaloniaPropertyChangedEventArgs e)
-    {
-        if (e.OldValue is bool old && old)
-            border.PointerWheelChanged -= Border_OnPointerWheelChanged;
-
-        if (e.NewValue is bool n && n)
-            border.PointerWheelChanged += Border_OnPointerWheelChanged;
-    }
-
-    private static async void Border_OnPointerWheelChanged(object? sender, PointerWheelEventArgs e)
-    {
-        if (sender is not Border border || border.DataContext is not MainWindowViewModel vm)
-            return;
-
-        // 仅处理鼠标滚轮（触控板也可能触发，但我们把它当作同一类输入即可）。
-        if (e.Delta.Y == 0)
-            return;
-
-        // 防止父容器/滚动控件抢走滚轮事件。
-        e.Handled = true;
-
-        // 上滚=远处；下滚=近处
-        var deltaY = e.Delta.Y;
-        await vm.OnPreviewRelativeFocusWheelAsync(deltaY).ConfigureAwait(true);
-    }
-}
+// 相对对焦滚轮行为已移除（不再通过滚轮驱动镜头 MF 对焦）。

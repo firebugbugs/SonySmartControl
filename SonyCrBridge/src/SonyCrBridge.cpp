@@ -45,6 +45,18 @@ ICrEnumCameraObjectInfo* g_enumList = nullptr;
 bool g_inited = false;
 CrDeviceHandle g_deviceHandle = 0;
 std::mutex g_mutex;
+ICrCameraObjectInfo* g_connectedInfo = nullptr;
+
+std::mutex g_lastConnectMutex;
+std::string g_lastConnectDebug;
+
+std::mutex g_lastLiveViewMutex;
+std::string g_lastLiveViewDebug;
+
+#if defined(_WIN32)
+// pairingDisplayName 指针可能被 SDK 异步保存使用，必须保证生命周期覆盖整个连接过程。
+static const std::wstring g_pairingNameW = L"SonySmartControl";
+#endif
 
 /** GetRemoteTransferContentsDataFile 异步完成信号（与 SimpleCli RemoteTransferMode 一致，依赖 OnNotifyRemoteTransferResult）。 */
 std::mutex g_remoteTransferWaitMutex;
@@ -57,10 +69,18 @@ class BridgeDeviceCallback final : public IDeviceCallback
 {
 public:
     std::atomic_bool connected{false};
+    std::atomic_uint lastError{0};
+    std::atomic_bool hasError{false};
 
     void OnConnected(DeviceConnectionVersioin /*version*/) override { connected.store(true); }
 
     void OnDisconnected(CrInt32u /*error*/) override { connected.store(false); }
+
+    void OnError(CrInt32u error) override
+    {
+        lastError.store(error);
+        hasError.store(true);
+    }
 
     void OnPropertyChanged() override {}
 
@@ -110,8 +130,6 @@ public:
     void OnNotifyRemoteTransferResult(CrInt32u /*notify*/, CrInt32u /*per*/, CrInt8u* /*data*/, CrInt64u /*size*/) override {}
 
     void OnWarning(CrInt32u /*warning*/) override {}
-
-    void OnError(CrInt32u /*error*/) override {}
 };
 
 BridgeDeviceCallback g_callback;
@@ -374,25 +392,23 @@ static std::string CrWcharBufferToUtf8(const wchar_t* w, int cch)
 
 static std::string CrTCharNullTermToUtf8(const CrChar* t)
 {
-#if defined(_WIN32)
-    const wchar_t* w = reinterpret_cast<const wchar_t*>(t);
-    if (!w)
+    if (!t)
         return {};
-    const int cch = static_cast<int>(std::wcsnlen(w, 4096));
+#if defined(_WIN32) && (defined(UNICODE) || defined(_UNICODE))
+    const wchar_t* w = reinterpret_cast<const wchar_t*>(t);
+    const int cch = static_cast<int>(::wcsnlen(w, 4096));
     return CrWcharBufferToUtf8(w, cch);
 #else
     const char* s = reinterpret_cast<const char*>(t);
-    if (!s)
-        return {};
     return std::string(s, std::strlen(s));
 #endif
 }
 
 static std::string CrTCharSizedToUtf8(const CrChar* t, CrInt32u sizeBytes)
 {
-#if defined(_WIN32)
     if (!t || sizeBytes == 0)
         return {};
+#if defined(_WIN32) && (defined(UNICODE) || defined(_UNICODE))
     const int nWchar = static_cast<int>(sizeBytes / sizeof(wchar_t));
     if (nWchar <= 0)
         return {};
@@ -404,9 +420,14 @@ static std::string CrTCharSizedToUtf8(const CrChar* t, CrInt32u sizeBytes)
         return {};
     return CrWcharBufferToUtf8(w, cch);
 #else
-    if (!t || sizeBytes == 0)
+    // 非 UNICODE Windows / 其他平台：按窄字符处理
+    const char* s = reinterpret_cast<const char*>(t);
+    size_t n = static_cast<size_t>(sizeBytes);
+    while (n > 0 && s[n - 1] == '\0')
+        --n;
+    if (n == 0)
         return {};
-    return std::string(reinterpret_cast<const char*>(t), static_cast<size_t>(sizeBytes));
+    return std::string(s, n);
 #endif
 }
 
@@ -421,12 +442,9 @@ static std::string CrEndpointUtf8(const ICrCameraObjectInfo* info)
 {
     if (!info)
         return {};
-#if defined(_WIN32)
-    const wchar_t* connW = reinterpret_cast<const wchar_t*>(info->GetConnectionTypeName());
-    const std::wstring conn(connW ? connW : L"");
-    if (conn == L"IP")
+    const std::string conn = CrConnectionTypeUtf8(info);
+    if (conn == "IP")
         return CrTCharSizedToUtf8(info->GetMACAddressChar(), info->GetMACAddressCharSize());
-#endif
     return CrTCharSizedToUtf8(reinterpret_cast<const CrChar*>(info->GetId()), info->GetIdSize());
 }
 
@@ -449,6 +467,11 @@ static void ClearLiveViewBuffers()
 
 static void DisconnectDeviceUnlocked()
 {
+    if (g_connectedInfo)
+    {
+        g_connectedInfo->Release();
+        g_connectedInfo = nullptr;
+    }
     if (g_deviceHandle != 0)
     {
         Disconnect(g_deviceHandle);
@@ -456,12 +479,90 @@ static void DisconnectDeviceUnlocked()
         g_deviceHandle = 0;
     }
     g_callback.connected.store(false);
+    g_callback.hasError.store(false);
+    g_callback.lastError.store(0);
     ResetTransportStats();
     ClearLiveViewBuffers();
     {
         std::lock_guard<std::mutex> fj(g_focusFramesJsonMutex);
         g_lastFocusFramesJson = "[]";
     }
+}
+
+static ICrCameraObjectInfo* CloneCameraObjectInfoForConnect(const ICrCameraObjectInfo* src)
+{
+    if (!src)
+        return nullptr;
+    return CreateCameraObjectInfo(
+        src->GetName(),
+        src->GetModel(),
+        src->GetUsbPid(),
+        src->GetIdType(),
+        src->GetIdSize(),
+        src->GetId(),
+        src->GetConnectionTypeName(),
+        src->GetAdaptorName(),
+        src->GetPairingNecessity(),
+        src->GetSSHsupport());
+}
+
+static bool TryMapModelToDeviceModelList(const ICrCameraObjectInfo* info, CrCameraDeviceModelList& outModel)
+{
+    // 目前优先覆盖本项目验证机型；若后续需要可继续扩展映射表。
+    const std::string model = CrModelToUtf8(info);
+    if (model == "ILCE-7CM2")
+    {
+        outModel = static_cast<CrCameraDeviceModelList>(CrCameraDeviceModel_ILCE_7CM2);
+        return true;
+    }
+    return false;
+}
+
+static ICrCameraObjectInfo* CreateIpCameraObjectForConnect(const ICrCameraObjectInfo* src)
+{
+    if (!src)
+        return nullptr;
+    CrCameraDeviceModelList model{};
+    if (!TryMapModelToDeviceModelList(src, model))
+        return nullptr;
+    const CrInt32u ip = src->GetIPAddress();
+    CrInt8u* mac = src->GetMACAddress();
+    const CrInt32u macSize = src->GetMACAddressSize();
+    if (ip == 0 || !mac || macSize < 6)
+        return nullptr;
+    ICrCameraObjectInfo* out = nullptr;
+    const CrError err = CreateCameraObjectInfoEthernetConnection(&out, model, ip, mac, src->GetSSHsupport());
+    if (CR_FAILED(err))
+        return nullptr;
+    return out;
+}
+
+static bool TryGetSshFingerprint(const ICrCameraObjectInfo* info, std::string& outFp)
+{
+    outFp.clear();
+    if (!info)
+        return false;
+    if (info->GetSSHsupport() != CrSSHsupportValue::CrSSHsupport_ON)
+        return false;
+    char buf[256] = {0};
+    CrInt32u fpLen = 0;
+    const CrError e = GetFingerprint(const_cast<ICrCameraObjectInfo*>(info), buf, &fpLen);
+    if (CR_FAILED(e) || fpLen == 0)
+        return false;
+    outFp.assign(buf, buf + fpLen);
+    return true;
+}
+
+static void SetLastConnectDebug(std::string s)
+{
+    std::lock_guard<std::mutex> lk(g_lastConnectMutex);
+    g_lastConnectDebug = std::move(s);
+}
+
+static void SetLastLiveViewDebug(std::string s)
+{
+    std::lock_guard<std::mutex> lk(g_lastLiveViewMutex);
+    g_lastLiveViewDebug = std::move(s);
 }
 
 static bool WaitForConnected(int timeoutMs)
@@ -471,9 +572,19 @@ static bool WaitForConnected(int timeoutMs)
     {
         if (g_callback.connected.load())
             return true;
+        // 部分机型/固件下 Connect() 成功但不会触发 OnConnected 回调；
+        // 此时 deviceHandle 已可用，可视为“已连接”。
+        if (g_deviceHandle != 0)
+        {
+            // 同步状态：后续所有 API 都依赖 connected 标志判断“已连接”。
+            g_callback.connected.store(true);
+            return true;
+        }
+        if (g_callback.hasError.load())
+            return false;
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
-    return g_callback.connected.load();
+    return g_callback.connected.load() || (g_deviceHandle != 0);
 }
 
 static bool ReconnectByIndexWithModeUnlocked(int index, CrSdkControlMode mode, bool enableLiveViewAfterConnect)
@@ -486,10 +597,52 @@ static bool ReconnectByIndexWithModeUnlocked(int index, CrSdkControlMode mode, b
 
     DisconnectDeviceUnlocked();
     auto* info = const_cast<ICrCameraObjectInfo*>(infoConst);
-    const CrError err = Connect(info, &g_callback, &g_deviceHandle, mode);
+    const std::string connType = CrConnectionTypeUtf8(infoConst);
+    const bool isIp = (connType == "IP");
+#if defined(_WIN32)
+    // pairingDisplayName 若被 SDK 保存为指针，必须使用全局静态缓冲区。
+    const CrInt16u* pairingDisplayName =
+        isIp ? reinterpret_cast<const CrInt16u*>(g_pairingNameW.c_str()) : nullptr;
+#else
+    const CrInt16u* pairingDisplayName = nullptr;
+#endif
+    if (g_connectedInfo)
+    {
+        g_connectedInfo->Release();
+        g_connectedInfo = nullptr;
+    }
+    // 官方文档推荐：IP 连接可用 CreateCameraObjectInfoEthernetConnection 重新构造对象（包含 IP/MAC/SSHsupport）。
+    // 枚举返回的对象内部字段在不同固件上可能不完整或生命周期复杂，因此优先使用重建对象。
+    g_connectedInfo = isIp ? CreateIpCameraObjectForConnect(infoConst) : nullptr;
+    if (!g_connectedInfo)
+        g_connectedInfo = CloneCameraObjectInfoForConnect(infoConst);
+    auto* connectInfo = g_connectedInfo ? g_connectedInfo : info;
+
+    std::string fingerprint;
+    const char* fpPtr = nullptr;
+    CrInt32u fpLen = 0;
+    if (TryGetSshFingerprint(infoConst, fingerprint))
+    {
+        fpPtr = fingerprint.c_str();
+        fpLen = static_cast<CrInt32u>(fingerprint.size());
+    }
+
+    // 与官方 RemoteCli 一致：默认 userId=admin（多数机型在 IP 连接时需要该默认账号参与握手/配对流程）。
+    const CrError err = Connect(
+        connectInfo,
+        &g_callback,
+        &g_deviceHandle,
+        mode,
+        CrReconnecting_ON,
+        "admin",
+        "",
+        fpPtr,
+        fpLen,
+        pairingDisplayName);
     if (CR_FAILED(err))
         return false;
-    if (!WaitForConnected(15000))
+    // IP 连接常需要机身端确认配对，给更长等待窗口。
+    if (!WaitForConnected(isIp ? 60000 : 15000))
     {
         DisconnectDeviceUnlocked();
         return false;
@@ -1259,6 +1412,71 @@ SONY_CR_API SonyCrStatus SonyCr_GetCameraEndpointUtf8(int index, char* buffer, i
 #endif
 }
 
+SONY_CR_API SonyCrStatus SonyCr_GetFocusOperationWithInt16EnableStatus(int* outEnable)
+{
+#if SONY_CR_BRIDGE_STUB
+    if (outEnable)
+        *outEnable = 0;
+    return SONY_CR_ERR_SDK_NOT_LINKED;
+#else
+    if (!outEnable)
+        return SONY_CR_ERR_INVALID_PARAM;
+    std::lock_guard lock(g_mutex);
+    if (g_deviceHandle == 0 || !g_callback.connected.load())
+        return SONY_CR_ERR_NOT_CONNECTED;
+
+    (void)SetPriorityKeyPcRemote(g_deviceHandle);
+
+    const auto readFromList = [&](CrDeviceProperty* list, CrInt32 nList) -> bool
+    {
+        if (!list || nList <= 0)
+            return false;
+        for (CrInt32 i = 0; i < nList; ++i)
+        {
+            if (list[i].GetCode() == CrDevicePropertyCode::CrDeviceProperty_FocusOperationWithInt16EnableStatus)
+            {
+                const CrInt64u v = list[i].GetCurrentValue();
+                *outEnable = (static_cast<int>(v & 0xFFu) != 0) ? 1 : 0;
+                return true;
+            }
+        }
+        return false;
+    };
+
+    // 优先走 Select（更轻），失败则回退全量 GetDeviceProperties；两者都失败时再尝试短暂停止 LiveView 重试一次。
+    auto tryRead = [&]() -> bool
+    {
+        CrInt32u code = CrDevicePropertyCode::CrDeviceProperty_FocusOperationWithInt16EnableStatus;
+        CrDeviceProperty* props = nullptr;
+        CrInt32 n = 0;
+        const CrError eSel = GetSelectDeviceProperties(g_deviceHandle, 1, &code, &props, &n);
+        if (!CR_FAILED(eSel) && readFromList(props, n))
+            return true;
+
+        CrDeviceProperty* allProps = nullptr;
+        CrInt32 nAll = 0;
+        const CrError eAll = GetDeviceProperties(g_deviceHandle, &allProps, &nAll);
+        if (!CR_FAILED(eAll) && readFromList(allProps, nAll))
+            return true;
+
+        return false;
+    };
+
+    if (!tryRead())
+    {
+        (void)SetDeviceSetting(g_deviceHandle, Setting_Key_EnableLiveView, 0);
+        std::this_thread::sleep_for(std::chrono::milliseconds(120));
+        const bool ok = tryRead();
+        (void)SetDeviceSetting(g_deviceHandle, Setting_Key_EnableLiveView, 1);
+        if (!ok)
+            return SONY_CR_ERR_CONTROL_FAILED;
+    }
+
+    // outEnable 已由 readFromList 设置
+    return SONY_CR_OK;
+#endif
+}
+
 SONY_CR_API SonyCrStatus SonyCr_ConnectRemoteByIndex(int index)
 {
 #if SONY_CR_BRIDGE_STUB
@@ -1279,11 +1497,97 @@ SONY_CR_API SonyCrStatus SonyCr_ConnectRemoteByIndex(int index)
 
     auto* info = const_cast<ICrCameraObjectInfo*>(infoConst);
     // 主链路稳定性优先：默认 Remote 模式，确保拍照后回传/保存行为与既有版本一致。
-    CrError err = Connect(info, &g_callback, &g_deviceHandle, CrSdkControlMode_Remote);
-    if (CR_FAILED(err))
+    const std::string connType = CrConnectionTypeUtf8(infoConst);
+    const bool isIp = (connType == "IP");
+#if defined(_WIN32)
+    const CrInt16u* pairingDisplayName =
+        isIp ? reinterpret_cast<const CrInt16u*>(g_pairingNameW.c_str()) : nullptr;
+#else
+    const CrInt16u* pairingDisplayName = nullptr;
+#endif
+    if (g_connectedInfo)
+    {
+        g_connectedInfo->Release();
+        g_connectedInfo = nullptr;
+    }
+    g_connectedInfo = CloneCameraObjectInfoForConnect(infoConst);
+    auto* connectInfo = g_connectedInfo ? g_connectedInfo : info;
+
+    std::string fingerprint;
+    const char* fpPtr = nullptr;
+    CrInt32u fpLen = 0;
+    if (TryGetSshFingerprint(infoConst, fingerprint))
+    {
+        fpPtr = fingerprint.c_str();
+        fpLen = static_cast<CrInt32u>(fingerprint.size());
+    }
+
+    // IP 连接失败时，很多机型不会弹出配对 UI。这里按“多策略”尝试不同参数组合，并记录诊断信息。
+    struct Attempt
+    {
+        CrReconnectingSet reconnect;
+        bool useFingerprint;
+        bool usePairingName;
+    };
+    const Attempt attempts[] =
+    {
+        // 先完全对齐 RemoteCli：不传 pairingDisplayName
+        { CrReconnecting_ON,  true,  false },
+        { CrReconnecting_OFF, true,  false },
+        { CrReconnecting_ON,  false, false },
+        { CrReconnecting_OFF, false, false },
+        // 再尝试传 pairingDisplayName（部分机型/固件会显示“配对设备名”）
+        { CrReconnecting_ON,  true,  true  },
+        { CrReconnecting_OFF, true,  true  },
+        { CrReconnecting_ON,  false, true  },
+        { CrReconnecting_OFF, false, true  },
+    };
+
+    CrError err = SCRSDK::CrError_None;
+    bool ok = false;
+    for (const auto& a : attempts)
+    {
+        const char* fpTry = a.useFingerprint ? fpPtr : nullptr;
+        const CrInt32u fpLenTry = a.useFingerprint ? fpLen : 0;
+        const CrInt16u* pdnTry = (isIp && a.usePairingName) ? pairingDisplayName : nullptr;
+        err = Connect(
+            connectInfo,
+            &g_callback,
+            &g_deviceHandle,
+            CrSdkControlMode_Remote,
+            a.reconnect,
+            "admin",
+            "",
+            fpTry,
+            fpLenTry,
+            pdnTry);
+        if (!CR_FAILED(err))
+        {
+            ok = true;
+            break;
+        }
+        // 清理句柄，准备下一次尝试
+        DisconnectDeviceUnlocked();
+    }
+
+    {
+        // 记录诊断：连接类型 / SSHsupport / authState / pairingNecessity / 是否带 fingerprint 等
+        std::string dbg = "connect:";
+        dbg += " conn=" + connType;
+        dbg += " ssh=" + std::to_string(static_cast<unsigned>(infoConst->GetSSHsupport()));
+        dbg += " auth=" + std::to_string(static_cast<unsigned>(infoConst->GetAuthenticationState()));
+        dbg += " fpLen=" + std::to_string(static_cast<unsigned>(fpLen));
+        dbg += " pdn=" + std::to_string(static_cast<unsigned>(isIp ? 1 : 0));
+        dbg += " err=" + std::to_string(static_cast<int>(err));
+        dbg += " cbErr=" + std::to_string(static_cast<unsigned>(g_callback.lastError.load()));
+        dbg += " h=" + std::to_string(static_cast<long long>(g_deviceHandle));
+        SetLastConnectDebug(std::move(dbg));
+    }
+
+    if (!ok)
         return ToConnectStatus(err);
 
-    if (!WaitForConnected(20000))
+    if (!WaitForConnected(isIp ? 60000 : 20000))
     {
         DisconnectDeviceUnlocked();
         return SONY_CR_ERR_CONNECT_FAILED;
@@ -1333,15 +1637,27 @@ SONY_CR_API SonyCrStatus SonyCr_LiveView_GetLastJpeg(unsigned char* buffer, int 
 
     std::lock_guard lock(g_mutex);
     if (g_deviceHandle == 0 || !g_callback.connected.load())
+    {
+        SetLastLiveViewDebug("lv: not-connected");
         return SONY_CR_ERR_NOT_CONNECTED;
+    }
+
+    // 单次拉帧诊断汇总：避免不同阶段反复覆盖导致误判。
+    CrError propsErr = SCRSDK::CrError_None;
+    CrError infoErr = SCRSDK::CrError_None;
+    CrError imageErr = SCRSDK::CrError_None;
+    int infoRetry = 0;
+    CrInt32u outBytes = 0;
 
     CrLiveViewProperty* props = nullptr;
     CrInt32 num = 0;
     CrError err = GetLiveViewProperties(g_deviceHandle, &props, &num);
     if (CR_FAILED(err))
     {
+        // 有些机型在 LiveView 尚未完全就绪时会返回 CrError_Api_InvalidCalled(0x8402) 等；
+        // 但 GetLiveViewImageInfo / GetLiveViewImage 仍可能已经可用，因此此处不要提前返回。
         UpdateFocusFramesJsonFromLiveViewProps(nullptr, 0);
-        return SONY_CR_ERR_NOT_CONNECTED;
+        propsErr = err;
     }
     if (props != nullptr)
     {
@@ -1351,14 +1667,36 @@ SONY_CR_API SonyCrStatus SonyCr_LiveView_GetLastJpeg(unsigned char* buffer, int 
     else
         UpdateFocusFramesJsonFromLiveViewProps(nullptr, 0);
 
+    // 官方文档中 LiveView 需要先 EnableLiveView，再取 ImageInfo/Image。
+    // 某些机型/固件在刚连接时会返回 CrError_Api_InvalidCalled(0x8402)，需要等待或再次 EnableLiveView。
     CrImageInfo inf;
     err = GetLiveViewImageInfo(g_deviceHandle, &inf);
     if (CR_FAILED(err))
-        return SONY_CR_ERR_NOT_CONNECTED;
+    {
+        if (err == CrError_Api_InvalidCalled)
+        {
+            // 尝试主动启用并短暂重试（避免 UI 侧一直白屏却没有真实原因）。
+            (void)SetDeviceSetting(g_deviceHandle, Setting_Key_EnableLiveView, 1);
+            for (int i = 0; i < 6; i++)
+            {
+                infoRetry++;
+                std::this_thread::sleep_for(std::chrono::milliseconds(200));
+                err = GetLiveViewImageInfo(g_deviceHandle, &inf);
+                if (!CR_FAILED(err))
+                    break;
+            }
+        }
+        if (CR_FAILED(err))
+            infoErr = err;
+    }
+    if (!CR_FAILED(infoErr))
+        infoErr = SCRSDK::CrError_None;
+    if (CR_FAILED(infoErr))
+        goto FinishDebug;
 
     const CrInt32u bufSize = inf.GetBufferSize();
     if (bufSize < 1)
-        return SONY_CR_ERR_NOT_CONNECTED;
+        goto FinishDebug;
 
     if (g_cachedBufSize != bufSize || !g_imageBlock)
     {
@@ -1373,15 +1711,14 @@ SONY_CR_API SonyCrStatus SonyCr_LiveView_GetLastJpeg(unsigned char* buffer, int 
     if (CR_FAILED(err))
     {
         // 与官方 Sample 一致：帧未更新时跳过本次，不报错
-        if (err == CrWarning_Frame_NotUpdated) // CrError.h
-            return SONY_CR_OK;
-        return SONY_CR_ERR_NOT_CONNECTED;
+        imageErr = err;
+        goto FinishDebug;
     }
 
     const CrInt32u imageSize = g_imageBlock->GetImageSize();
     CrInt8u* imgData = g_imageBlock->GetImageData();
     if (!imgData || imageSize == 0)
-        return SONY_CR_OK;
+        goto FinishDebug;
 
     if (static_cast<int>(imageSize) > bufferSize)
         return SONY_CR_ERR_BUFFER_TOO_SMALL;
@@ -1389,6 +1726,20 @@ SONY_CR_API SonyCrStatus SonyCr_LiveView_GetLastJpeg(unsigned char* buffer, int 
     std::memcpy(buffer, imgData, static_cast<size_t>(imageSize));
     *outWritten = static_cast<int>(imageSize);
     AddDownloadBytes(static_cast<unsigned long long>(imageSize));
+    outBytes = imageSize;
+
+FinishDebug:
+    {
+        std::string dbg = "lv:";
+        dbg += " props=" + std::to_string(static_cast<int>(propsErr));
+        dbg += " info=" + std::to_string(static_cast<int>(infoErr));
+        dbg += " infoRetry=" + std::to_string(infoRetry);
+        dbg += " img=" + std::to_string(static_cast<int>(imageErr));
+        dbg += " bytes=" + std::to_string(static_cast<unsigned>(outBytes));
+        SetLastLiveViewDebug(std::move(dbg));
+    }
+
+    // 即使失败也返回 OK，让上层循环继续重试。
     return SONY_CR_OK;
 #endif
 }
@@ -1405,6 +1756,7 @@ SONY_CR_API SonyCrStatus SonyCr_RemoteTouchAf(int x, int y)
         return SONY_CR_ERR_NOT_CONNECTED;
     if (x < 0 || x > 639 || y < 0 || y > 479)
         return SONY_CR_ERR_INVALID_PARAM;
+    (void)SetPriorityKeyPcRemote(g_deviceHandle);
     const CrInt64u value = (static_cast<CrInt64u>(static_cast<CrInt32u>(x) & 0xFFFFu) << 16)
         | static_cast<CrInt64u>(static_cast<CrInt32u>(y) & 0xFFFFu);
     const CrError err =
@@ -1424,8 +1776,21 @@ SONY_CR_API SonyCrStatus SonyCr_ExecuteControlCodeValue(unsigned int code, unsig
     std::lock_guard lock(g_mutex);
     if (g_deviceHandle == 0 || !g_callback.connected.load())
         return SONY_CR_ERR_NOT_CONNECTED;
-    const CrError err = SCRSDK::ExecuteControlCodeValue(
+    (void)SetPriorityKeyPcRemote(g_deviceHandle);
+    CrError err = SCRSDK::ExecuteControlCodeValue(
         g_deviceHandle, static_cast<SCRSDK::CrControlCode>(code), static_cast<CrInt64u>(value));
+    if (CR_FAILED(err)
+        && (code == static_cast<unsigned int>(SCRSDK::CrControlCode_FocusOperationWithInt16)
+            || code == static_cast<unsigned int>(SCRSDK::CrControlCode_CancelFocusPosition)))
+    {
+        // 部分机型在 LiveView 拉流/繁忙时会拒绝相对对焦（ErrControlFailed）。
+        // 这里做一次短暂停止 LiveView → 重试 → 尽力恢复，避免用户侧频繁 -8。
+        (void)SetDeviceSetting(g_deviceHandle, Setting_Key_EnableLiveView, 0);
+        std::this_thread::sleep_for(std::chrono::milliseconds(120));
+        err = SCRSDK::ExecuteControlCodeValue(
+            g_deviceHandle, static_cast<SCRSDK::CrControlCode>(code), static_cast<CrInt64u>(value));
+        (void)SetDeviceSetting(g_deviceHandle, Setting_Key_EnableLiveView, 1);
+    }
     AddUploadBytes(12);
     return CR_FAILED(err) ? SONY_CR_ERR_CONTROL_FAILED : SONY_CR_OK;
 #endif
@@ -1446,6 +1811,7 @@ SONY_CR_API SonyCrStatus SonyCr_ExecuteControlCodeString(unsigned int code, cons
         return SONY_CR_ERR_NOT_CONNECTED;
     if (length > 0xFFFFu)
         return SONY_CR_ERR_INVALID_PARAM;
+    (void)SetPriorityKeyPcRemote(g_deviceHandle);
     const CrError err = SCRSDK::ExecuteControlCodeString(
         g_deviceHandle,
         static_cast<SCRSDK::CrControlCode>(code),
@@ -2327,6 +2693,46 @@ SONY_CR_API SonyCrStatus SonyCr_GetLastCapturePullDebugUtf8(char* buffer, int bu
     std::memcpy(buffer, s.c_str(), static_cast<size_t>(need));
     return SONY_CR_OK;
 #endif
+}
+
+SONY_CR_API SonyCrStatus SonyCr_GetLastConnectDebugUtf8(char* buffer, int bufferSizeBytes, int* outWritten)
+{
+    if (!buffer || bufferSizeBytes <= 0 || !outWritten)
+        return SONY_CR_ERR_INVALID_PARAM;
+    std::string s;
+    {
+        std::lock_guard<std::mutex> lk(g_lastConnectMutex);
+        s = g_lastConnectDebug;
+    }
+    const int need = static_cast<int>(s.size()) + 1;
+    if (need > bufferSizeBytes)
+    {
+        *outWritten = need;
+        return SONY_CR_ERR_BUFFER_TOO_SMALL;
+    }
+    std::memcpy(buffer, s.c_str(), static_cast<size_t>(need));
+    *outWritten = need;
+    return SONY_CR_OK;
+}
+
+SONY_CR_API SonyCrStatus SonyCr_GetLastLiveViewDebugUtf8(char* buffer, int bufferSizeBytes, int* outWritten)
+{
+    if (!buffer || bufferSizeBytes <= 0 || !outWritten)
+        return SONY_CR_ERR_INVALID_PARAM;
+    std::string s;
+    {
+        std::lock_guard<std::mutex> lk(g_lastLiveViewMutex);
+        s = g_lastLiveViewDebug;
+    }
+    const int need = static_cast<int>(s.size()) + 1;
+    if (need > bufferSizeBytes)
+    {
+        *outWritten = need;
+        return SONY_CR_ERR_BUFFER_TOO_SMALL;
+    }
+    std::memcpy(buffer, s.c_str(), static_cast<size_t>(need));
+    *outWritten = need;
+    return SONY_CR_OK;
 }
 
 SONY_CR_API SonyCrStatus SonyCr_SetSaveInfoUtf16(const unsigned short* pathUtf16, const unsigned short* prefixUtf16, int saveNumber)

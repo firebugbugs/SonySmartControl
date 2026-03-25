@@ -537,6 +537,18 @@ public static class SonyCrSdk
     public static void RemoteTouchAf(int x, int y) =>
         ThrowIfFailed(SonyCrBridgeNative.SonyCr_RemoteTouchAf(x, y), nameof(RemoteTouchAf));
 
+    /// <summary>
+    /// 查询「相对对焦（Int16）」是否可用（CrDeviceProperty_FocusOperationWithInt16EnableStatus）。
+    /// true=Enable，false=Disable；非 Ok 时抛异常。
+    /// </summary>
+    public static bool GetFocusOperationWithInt16Enabled()
+    {
+        ThrowIfFailed(
+            SonyCrBridgeNative.SonyCr_GetFocusOperationWithInt16EnableStatus(out var en),
+            nameof(GetFocusOperationWithInt16Enabled));
+        return en != 0;
+    }
+
     /// <summary>将画面归一化坐标转为 SDK 触摸坐标并请求对焦。</summary>
     public static void RemoteTouchAfFromNormalized(double normalizedX, double normalizedY)
     {

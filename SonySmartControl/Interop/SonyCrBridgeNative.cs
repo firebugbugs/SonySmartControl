@@ -46,6 +46,9 @@ internal static class SonyCrBridgeNative
     internal static extern int SonyCr_GetCameraEndpointUtf8(int index, [Out] byte[] buffer, int bufferSizeBytes);
 
     [DllImport(Dll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    internal static extern int SonyCr_GetFocusOperationWithInt16EnableStatus(out int outEnable);
+
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     internal static extern int SonyCr_ConnectRemoteByIndex(int index);
 
     [DllImport(Dll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
@@ -203,6 +206,105 @@ internal static class SonyCrBridgeNative
         {
             var buf = new byte[cap];
             var st = _getCapturePullDebug!(buf, buf.Length, out var written);
+            if (st == (int)SonyCrStatus.ErrBufferTooSmall)
+                continue;
+            if (st == (int)SonyCrStatus.Ok && written > 1)
+                return Encoding.UTF8.GetString(buf.AsSpan(0, written - 1));
+            return null;
+        }
+        return null;
+    }
+
+    private delegate int SonyCr_GetLastConnectDebugUtf8Delegate(
+        [Out] byte[] buffer,
+        int bufferSizeBytes,
+        out int outWritten);
+
+    private static readonly object ConnectDebugLock = new();
+    private static SonyCr_GetLastConnectDebugUtf8Delegate? _getConnectDebug;
+    private static bool _getConnectDebugExportUnavailable;
+
+    internal static string? TryGetLastConnectDebugUtf8()
+    {
+        lock (ConnectDebugLock)
+        {
+            if (_getConnectDebugExportUnavailable)
+                return null;
+            if (_getConnectDebug == null)
+            {
+                IntPtr h;
+                try
+                {
+                    h = NativeLibrary.Load(Dll);
+                }
+                catch (DllNotFoundException)
+                {
+                    _getConnectDebugExportUnavailable = true;
+                    return null;
+                }
+                if (!NativeLibrary.TryGetExport(h, "SonyCr_GetLastConnectDebugUtf8", out var addr))
+                {
+                    _getConnectDebugExportUnavailable = true;
+                    return null;
+                }
+                _getConnectDebug =
+                    Marshal.GetDelegateForFunctionPointer<SonyCr_GetLastConnectDebugUtf8Delegate>(addr);
+            }
+
+            var buf = new byte[2048];
+            var st = _getConnectDebug!(buf, buf.Length, out var written);
+            if (st != 0 || written <= 0)
+                return null;
+            var len = Math.Min(written, buf.Length);
+            if (len > 0 && buf[len - 1] == 0)
+                len--;
+            return Encoding.UTF8.GetString(buf, 0, len);
+        }
+    }
+
+    private delegate int SonyCr_GetLastLiveViewDebugUtf8Delegate(
+        [Out] byte[] buffer,
+        int bufferSizeBytes,
+        out int outWritten);
+
+    private static readonly object LiveViewDebugLock = new();
+    private static SonyCr_GetLastLiveViewDebugUtf8Delegate? _getLiveViewDebug;
+    private static bool _getLiveViewDebugExportUnavailable;
+
+    internal static string? TryGetLastLiveViewDebugUtf8()
+    {
+        lock (LiveViewDebugLock)
+        {
+            if (_getLiveViewDebugExportUnavailable)
+                return null;
+            if (_getLiveViewDebug == null)
+            {
+                IntPtr h;
+                try
+                {
+                    h = NativeLibrary.Load(Dll);
+                }
+                catch (DllNotFoundException)
+                {
+                    _getLiveViewDebugExportUnavailable = true;
+                    return null;
+                }
+
+                if (!NativeLibrary.TryGetExport(h, "SonyCr_GetLastLiveViewDebugUtf8", out var addr))
+                {
+                    _getLiveViewDebugExportUnavailable = true;
+                    return null;
+                }
+
+                _getLiveViewDebug =
+                    Marshal.GetDelegateForFunctionPointer<SonyCr_GetLastLiveViewDebugUtf8Delegate>(addr);
+            }
+        }
+
+        for (var cap = 512; cap <= 16 * 1024; cap *= 2)
+        {
+            var buf = new byte[cap];
+            var st = _getLiveViewDebug!(buf, buf.Length, out var written);
             if (st == (int)SonyCrStatus.ErrBufferTooSmall)
                 continue;
             if (st == (int)SonyCrStatus.Ok && written > 1)
