@@ -1,0 +1,270 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:SonySmartControl.ViewModels"
+        xmlns:helpers="using:SonySmartControl.Helpers"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        d:DesignWidth="560"
+        d:DesignHeight="520"
+        x:Class="SonySmartControl.Views.SettingsProfilesWindow"
+        x:Name="Root"
+        x:DataType="vm:SettingsProfilesViewModel"
+        Title="配置"
+        Icon="{x:Static helpers:AppIconUris.WindowIcon}"
+        Width="560"
+        Height="520"
+        MinWidth="420"
+        MinHeight="360"
+        WindowStartupLocation="CenterOwner"
+        SystemDecorations="None"
+        CanResize="True"
+        Background="Transparent"
+        TransparencyLevelHint="Transparent"
+        ExtendClientAreaToDecorationsHint="False"
+        Loaded="SettingsProfilesWindow_OnLoaded">
+
+    <Design.DataContext>
+        <vm:SettingsProfilesViewModel/>
+    </Design.DataContext>
+
+    <!-- 与日志窗口一致：透明外缘 + 可拖拽缩放边 + 圆角卡片 -->
+    <Grid x:Name="OuterChromeGrid">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="6"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="6"/>
+        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="6"/>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="6"/>
+        </Grid.ColumnDefinitions>
+
+        <Border x:Name="ResizeNw" Grid.Row="0" Grid.Column="0"
+                Background="Transparent" Cursor="TopLeftCorner" PointerPressed="ResizeNw_OnPointerPressed"/>
+        <Border x:Name="ResizeN" Grid.Row="0" Grid.Column="1"
+                Background="Transparent" Cursor="SizeNorthSouth" PointerPressed="ResizeN_OnPointerPressed"/>
+        <Border x:Name="ResizeNe" Grid.Row="0" Grid.Column="2"
+                Background="Transparent" Cursor="TopRightCorner" PointerPressed="ResizeNe_OnPointerPressed"/>
+
+        <Border x:Name="ResizeW" Grid.Row="1" Grid.Column="0" Grid.RowSpan="2"
+                Background="Transparent" Cursor="SizeWestEast" PointerPressed="ResizeW_OnPointerPressed"/>
+        <Border x:Name="ResizeE" Grid.Row="1" Grid.Column="2" Grid.RowSpan="2"
+                Background="Transparent" Cursor="SizeWestEast" PointerPressed="ResizeE_OnPointerPressed"/>
+
+        <Border x:Name="ResizeSw" Grid.Row="3" Grid.Column="0"
+                Background="Transparent" Cursor="BottomLeftCorner" PointerPressed="ResizeSw_OnPointerPressed"/>
+        <Border x:Name="ResizeS" Grid.Row="3" Grid.Column="1"
+                Background="Transparent" Cursor="SizeNorthSouth" PointerPressed="ResizeS_OnPointerPressed"/>
+        <Border x:Name="ResizeSe" Grid.Row="3" Grid.Column="2"
+                Background="Transparent" Cursor="BottomRightCorner" PointerPressed="ResizeSe_OnPointerPressed"/>
+
+        <Border x:Name="CardRoot"
+                Grid.Row="1" Grid.Column="1" Grid.RowSpan="2"
+                CornerRadius="14"
+                ClipToBounds="True"
+                Background="#F6F7FA"
+                BorderBrush="#D9DEE8"
+                BorderThickness="1"
+                BoxShadow="0 12 40 0 #28000000">
+            <Grid RowDefinitions="Auto,*">
+                <Border x:Name="TitleBarHost"
+                        Grid.Row="0"
+                        MinHeight="44"
+                        Margin="1,1,1,0"
+                        CornerRadius="13,13,0,0"
+                        Background="#EEF0F5"
+                        BorderBrush="#D9DEE8"
+                        BorderThickness="0,0,0,1"
+                        Padding="12,0,4,0"
+                        PointerPressed="TitleBar_OnPointerPressed">
+                    <Grid ColumnDefinitions="Auto,*,Auto">
+                        <StackPanel Grid.Column="0"
+                                    Orientation="Horizontal"
+                                    VerticalAlignment="Center"
+                                    Spacing="10">
+                            <Image Width="22"
+                                   Height="22"
+                                   VerticalAlignment="Center"
+                                   Source="avares://SonySmartControl/Assets/cheems.ico"/>
+                            <TextBlock VerticalAlignment="Center"
+                                       FontSize="15"
+                                       FontWeight="SemiBold"
+                                       Foreground="#1F2430"
+                                       Text="配置"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="2"
+                                    Orientation="Horizontal"
+                                    VerticalAlignment="Center"
+                                    Spacing="2">
+                            <Button x:Name="ChromeMinimize"
+                                    Classes="chrome-caption-btn"
+                                    Click="ChromeMinimize_OnClick"
+                                    ToolTip.Tip="最小化">
+                                <TextBlock Text="&#xE65A;"
+                                           FontFamily="avares://SonySmartControl/Assets/Fonts/iconfont.ttf#CheemsFont"
+                                           FontSize="14"
+                                           Foreground="#5C6370"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"/>
+                            </Button>
+                            <Button x:Name="ChromeMaximize"
+                                    Classes="chrome-caption-btn"
+                                    Click="ChromeMaximize_OnClick"
+                                    ToolTip.Tip="最大化">
+                                <Panel>
+                                    <TextBlock x:Name="MaximizeGlyph"
+                                               Text="&#xE6F7;"
+                                               FontFamily="avares://SonySmartControl/Assets/Fonts/iconfont.ttf#CheemsFont"
+                                               FontSize="14"
+                                               Foreground="#5C6370"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="RestoreGlyph"
+                                               IsVisible="False"
+                                               Text="&#xE66E;"
+                                               FontFamily="avares://SonySmartControl/Assets/Fonts/iconfont.ttf#CheemsFont"
+                                               FontSize="14"
+                                               Foreground="#5C6370"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center"/>
+                                </Panel>
+                            </Button>
+                            <Button x:Name="ChromeClose"
+                                    Classes="chrome-caption-close"
+                                    Click="ChromeClose_OnClick"
+                                    Margin="2,0,6,0"
+                                    Background="#EA4235"
+                                    CornerRadius="8"
+                                    ToolTip.Tip="关闭">
+                                <TextBlock Text="&#xE64D;"
+                                           FontFamily="avares://SonySmartControl/Assets/Fonts/iconfont.ttf#CheemsFont"
+                                           FontSize="14"
+                                           Foreground="#FFFFFF"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"/>
+                            </Button>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <Grid Grid.Row="1"
+                      MinHeight="0">
+                    <Grid Margin="16,12,16,16"
+                          RowDefinitions="Auto,Auto,*"
+                          RowSpacing="10">
+                        <TextBlock Grid.Row="0"
+                                   Text="{Binding HintText}"
+                                   FontSize="12"
+                                   Foreground="#6B7280"
+                                   TextWrapping="Wrap"/>
+                        <TextBlock Grid.Row="1"
+                                   Text="{Binding ErrorText}"
+                                   FontSize="12"
+                                   Foreground="#C2410C"
+                                   IsVisible="{Binding HasErrorText}"
+                                   TextWrapping="Wrap"/>
+
+                        <Border Grid.Row="2"
+                                CornerRadius="10"
+                                BorderBrush="#E5EAF0"
+                                BorderThickness="1"
+                                Background="#FFFFFF"
+                                Padding="10">
+                            <Grid RowDefinitions="Auto,Auto,*"
+                                  RowSpacing="10">
+                                <StackPanel Orientation="Horizontal"
+                                            Spacing="8">
+                                    <Button Classes="chrome-text"
+                                            Padding="12,6"
+                                            Content="新建"
+                                            Command="{Binding CreateProfileCommand}"/>
+                                    <Button Classes="chrome-text"
+                                            Padding="12,6"
+                                            Content="改名"
+                                            Command="{Binding BeginRenameSelectedCommand}"
+                                            IsEnabled="{Binding CanRenameSelected}"/>
+                                    <Button Classes="chrome-text"
+                                            Padding="12,6"
+                                            Content="删除"
+                                            Command="{Binding DeleteSelectedProfileCommand}"
+                                            IsEnabled="{Binding CanDeleteSelected}"/>
+                                    <Button Classes="chrome-text"
+                                            Padding="12,6"
+                                            Content="使用该配置"
+                                            Command="{Binding ApplySelectedProfileCommand}"
+                                            IsEnabled="{Binding CanApplySelected}"/>
+                                </StackPanel>
+
+                                <Border Grid.Row="1"
+                                        IsVisible="{Binding IsRenaming}"
+                                        CornerRadius="10"
+                                        BorderBrush="#DDE8FF"
+                                        BorderThickness="1"
+                                        Background="#F7FAFF"
+                                        Padding="10">
+                                    <Grid ColumnDefinitions="*,Auto,Auto"
+                                          ColumnSpacing="8">
+                                        <TextBox Watermark="输入新名称"
+                                                 Text="{Binding RenameText, Mode=TwoWay}"/>
+                                        <Button Grid.Column="1"
+                                                Classes="chrome-text"
+                                                Padding="12,6"
+                                                Content="确定"
+                                                Command="{Binding ConfirmRenameCommand}"/>
+                                        <Button Grid.Column="2"
+                                                Classes="chrome-text"
+                                                Padding="12,6"
+                                                Content="取消"
+                                                Command="{Binding CancelRenameCommand}"/>
+                                    </Grid>
+                                </Border>
+
+                                <ListBox Grid.Row="2"
+                                         ItemsSource="{Binding Profiles}"
+                                         SelectedItem="{Binding SelectedProfile, Mode=TwoWay}">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Padding="0,6"
+                                                    BorderBrush="#F0F2F6"
+                                                    BorderThickness="0,0,0,1">
+                                                <Grid ColumnDefinitions="*,Auto"
+                                                      ColumnSpacing="12">
+                                                    <StackPanel>
+                                                        <TextBlock Text="{Binding Name}"
+                                                                   FontSize="13"
+                                                                   FontWeight="SemiBold"
+                                                                   Foreground="#1F2430"/>
+                                                        <TextBlock Text="{Binding UpdatedText}"
+                                                                   FontSize="12"
+                                                                   Foreground="#6B7280"/>
+                                                    </StackPanel>
+                                                    <Border Grid.Column="1"
+                                                            IsVisible="{Binding IsCurrent}"
+                                                            Padding="8,2"
+                                                            CornerRadius="999"
+                                                            Background="#EAF2FF"
+                                                            BorderBrush="#C9DDFF"
+                                                            BorderThickness="1"
+                                                            VerticalAlignment="Center">
+                                                        <TextBlock Text="当前"
+                                                                   FontSize="12"
+                                                                   Foreground="#2A5EA8"
+                                                                   FontWeight="SemiBold"/>
+                                                    </Border>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </Grid>
+                        </Border>
+                    </Grid>
+                </Grid>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>
+

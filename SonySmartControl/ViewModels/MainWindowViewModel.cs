@@ -28,6 +28,7 @@ namespace SonySmartControl.ViewModels;
 
 public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
 {
+    private readonly ICameraSettingsProfilesStore _profilesStore;
     private readonly IUserCameraSettingsService _userCameraSettings;
     private readonly IFolderPickerService _folderPicker;
     private readonly ICameraPreviewSessionFactory _cameraPreviewSessionFactory;
@@ -37,7 +38,10 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     private readonly IServiceProvider _serviceProvider;
     private readonly ITopLevelProvider _topLevelProvider;
 
-    private readonly bool _persistEnabled;
+    private bool _persistEnabled;
+    private long? _currentProfileId;
+
+    private int _saveSettingsDbPersistVersion;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsHistogramOverlayVisible))]
@@ -136,7 +140,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CameraConnectionTooltip))]
-    private string _saveDirectory;
+    private string _saveDirectory = "";
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CameraConnectionTooltip))]
@@ -160,9 +164,9 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     public string StillImageQualityLabel => SelectedStillCodecIndex == 1 ? "HEIF 质量" : "JPEG 质量";
     public string StillImageSizeLabel => SelectedStillCodecIndex == 1 ? "HEIF 尺寸" : "JPEG 尺寸";
 
-    [ObservableProperty] private string _fileNamePrefix;
+    [ObservableProperty] private string _fileNamePrefix = "";
 
-    [ObservableProperty] private string _timelapseSaveDirectory;
+    [ObservableProperty] private string _timelapseSaveDirectory = "";
 
     [ObservableProperty] private int _timelapseIntervalSeconds;
 
@@ -360,6 +364,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
 
     /// <summary>运行期由 DI 解析；依赖具体服务实现。</summary>
     public MainWindowViewModel(
+        ICameraSettingsProfilesStore profilesStore,
         IUserCameraSettingsService userCameraSettings,
         IFolderPickerService folderPicker,
         ICameraPreviewSessionFactory cameraPreviewSessionFactory,
@@ -369,6 +374,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         IServiceProvider serviceProvider,
         ITopLevelProvider topLevelProvider)
     {
+        _profilesStore = profilesStore;
         _userCameraSettings = userCameraSettings;
         _folderPicker = folderPicker;
         _cameraPreviewSessionFactory = cameraPreviewSessionFactory;
@@ -377,19 +383,12 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         _appLogService = appLogService;
         _serviceProvider = serviceProvider;
         _topLevelProvider = topLevelProvider;
-
-        var s = _userCameraSettings.Load();
         _persistEnabled = false;
-        _saveDirectory = s.SaveDirectory;
-        _captureFormatIndex = s.CaptureFormatIndex;
-        RefreshStillFormatUiFromCaptureFormat(_captureFormatIndex);
-        _fileNamePrefix = s.FileNamePrefix;
-        _timelapseSaveDirectory = s.TimelapseSaveDirectory;
-        _timelapseIntervalSeconds = Math.Max(2, s.TimelapseIntervalSeconds);
-        _timelapseTargetFrames = Math.Max(0, s.TimelapseTargetFrames);
-        _showHistogram = s.ShowHistogram ?? true;
-        _guideOverlayIndex = s.GuideOverlayIndex;
+        ApplySettingsToUi(new CameraUserSettings());
         _persistEnabled = true;
+
+        // 异步初始化：确保默认配置存在，并加载当前配置到界面。
+        _ = InitializeProfilesAndLoadCurrentAsync();
         RefreshRecentGalleryFromDisk();
         _appLogService.Append(StatusMessage);
     }
@@ -397,6 +396,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     /// <summary>设计器与 MainWindow.axaml 预览用默认实现。</summary>
     public MainWindowViewModel()
         : this(
+            new SqliteCameraSettingsProfilesStore(),
             new UserCameraSettingsService(),
             new AvaloniaFolderPickerService(new TopLevelProvider()),
             new CrSdkCameraPreviewSessionFactory(),
@@ -411,7 +411,133 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     {
     }
 
+    private async Task InitializeProfilesAndLoadCurrentAsync()
+    {
+        try
+        {
+            var profiles = await _profilesStore.ListAsync().ConfigureAwait(true);
+            if (profiles.Count == 0)
+            {
+                // 程序第一次启动：自动创建“默认配置”，并设为当前。
+                var id = await _profilesStore
+                    .CreateAsync("默认配置", new CameraUserSettings())
+                    .ConfigureAwait(true);
+                await _profilesStore.SetCurrentProfileIdAsync(id).ConfigureAwait(true);
+                _currentProfileId = id;
+            }
+            else
+            {
+                _currentProfileId = await _profilesStore.GetCurrentProfileIdAsync().ConfigureAwait(true);
+                if (_currentProfileId == null)
+                {
+                    // 若没有 current_profile_id，则取最新的一条作为当前。
+                    _currentProfileId = profiles[0].Id;
+                    await _profilesStore.SetCurrentProfileIdAsync(_currentProfileId).ConfigureAwait(true);
+                }
+            }
+
+            if (_currentProfileId is long pid)
+            {
+                var s = await _profilesStore.LoadAsync(pid).ConfigureAwait(true);
+                if (s != null)
+                {
+                    _persistEnabled = false;
+                    ApplySettingsToUi(s);
+                    _persistEnabled = true;
+                }
+            }
+        }
+        catch
+        {
+            // 初始化失败不影响 UI；继续用默认值
+        }
+    }
+
+    private void ApplySettingsToUi(CameraUserSettings s)
+    {
+        // 这里必须通过生成的属性赋值（避免 MVVMTK0034 警告），
+        // 且调用方会先把 _persistEnabled 置为 false，避免触发写库。
+        SaveDirectory = s.SaveDirectory;
+        CaptureFormatIndex = s.CaptureFormatIndex;
+        RefreshStillFormatUiFromCaptureFormat(CaptureFormatIndex);
+        FileNamePrefix = s.FileNamePrefix;
+        TimelapseSaveDirectory = s.TimelapseSaveDirectory;
+        TimelapseIntervalSeconds = Math.Max(2, s.TimelapseIntervalSeconds);
+        TimelapseTargetFrames = Math.Max(0, s.TimelapseTargetFrames);
+        ShowHistogram = s.ShowHistogram ?? true;
+        GuideOverlayIndex = s.GuideOverlayIndex;
+    }
+
+    private void SchedulePersistSettingsToDbDebounced()
+    {
+        if (!_persistEnabled)
+            return;
+        var v = ++_saveSettingsDbPersistVersion;
+        _ = PersistSettingsToDbAfterDelayAsync(v);
+    }
+
+    private async Task PersistSettingsToDbAfterDelayAsync(int version)
+    {
+        try
+        {
+            await Task.Delay(200).ConfigureAwait(true);
+            if (version != _saveSettingsDbPersistVersion)
+                return;
+            if (_currentProfileId is not long pid)
+                return;
+            await _profilesStore.UpdateAsync(pid, ToSettings()).ConfigureAwait(true);
+        }
+        catch
+        {
+        }
+    }
+
     private static readonly AppLogService DesignTimeAppLog = new();
+
+    [RelayCommand]
+    private void OpenSettingsProfiles()
+    {
+        if (_currentProfileId is not long pid)
+        {
+            StatusMessage = "配置尚未初始化，请稍候…";
+            return;
+        }
+
+        var win = new SettingsProfilesWindow();
+        var vm = new SettingsProfilesViewModel(
+            _profilesStore,
+            pid,
+            async id => await ApplyProfileAndSetCurrentAsync(id).ConfigureAwait(true),
+            () => win.Close());
+        win.DataContext = vm;
+        if (_topLevelProvider.GetTopLevel() is Window owner)
+            win.Show(owner);
+        else
+            win.Show();
+    }
+
+    private async Task ApplyProfileAndSetCurrentAsync(long id)
+    {
+        try
+        {
+            await _profilesStore.SetCurrentProfileIdAsync(id).ConfigureAwait(true);
+            _currentProfileId = id;
+            var s = await _profilesStore.LoadAsync(id).ConfigureAwait(true);
+            if (s == null)
+                return;
+            _persistEnabled = false;
+            ApplySettingsToUi(s);
+            _persistEnabled = true;
+
+            // 切换配置后，把关键保存设置同步到相机（避免仍按旧设置拍摄）
+            ScheduleSyncSaveSettingsToCameraDebounced();
+            if (IsSessionActive && _session != null)
+                _ = PushCaptureFormatToCameraAsync();
+        }
+        catch
+        {
+        }
+    }
 
     /// <summary>主窗口将左右方向键交给 ViewModel；在文本框内聚焦时不应抢键。</summary>
     public bool TryHandleGalleryArrowNavigation(Key key, object? focusedElement)
@@ -991,6 +1117,53 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     /// <summary>预览指针是否仍视为按下（避免 Released 与 CaptureLost 各触发一次时世代连加两次）。</summary>
     private bool _previewFocusPointerDown;
 
+    // ---- MF 下相对对焦：滚轮操作 ----
+    private readonly object _relativeFocusWheelStopGate = new();
+    private CancellationTokenSource? _relativeFocusWheelStopCts;
+    private const int RelativeFocusWheelStopDelayMs = 220;
+    
+    // Far: 0x0001..0x7FFF（符号为正）
+    private static readonly short[] RelativeFocusSpeedFarInt16 =
+    [
+        0x0001,
+        0x2000,
+        0x4000,
+        0x6000,
+        0x7FFF,
+    ];
+
+    // Near: 0xFFFF..0x8000（符号为负）
+    private static readonly short[] RelativeFocusSpeedNearInt16 =
+    [
+        unchecked((short)0xFFFF),
+        unchecked((short)0xE000),
+        unchecked((short)0xC000),
+        unchecked((short)0xA000),
+        unchecked((short)0x8000),
+    ];
+
+    private void CancelRelativeFocusWheelStop()
+    {
+        lock (_relativeFocusWheelStopGate)
+        {
+            try
+            {
+                _relativeFocusWheelStopCts?.Cancel();
+            }
+            catch
+            {
+            }
+            try
+            {
+                _relativeFocusWheelStopCts?.Dispose();
+            }
+            catch
+            {
+            }
+            _relativeFocusWheelStopCts = null;
+        }
+    }
+
     /// <summary>连拍：已向机身发送 Release Down 且尚未 Up（与半按并存时需先 HoldEnd 再解锁）。</summary>
     private bool _captureBurstShutterDownActive;
 
@@ -1028,6 +1201,8 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     {
         if (!CanCrSdkCameraOps() || _session == null)
             return;
+
+        CancelRelativeFocusWheelStop();
 
         if (_captureTaskActive)
             return;
@@ -1104,6 +1279,8 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     {
         if (!CanCrSdkCameraOps() || _session == null)
             return;
+
+        CancelRelativeFocusWheelStop();
 
         if (_captureTaskActive)
         {
@@ -1528,7 +1705,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     partial void OnSaveDirectoryChanged(string value)
     {
         if (_persistEnabled)
-            _userCameraSettings.Save(ToSettings());
+            SchedulePersistSettingsToDbDebounced();
         RefreshRecentGalleryFromDisk();
         ScheduleSyncSaveSettingsToCameraDebounced();
     }
@@ -1536,7 +1713,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     partial void OnTimelapseSaveDirectoryChanged(string value)
     {
         if (_persistEnabled)
-            _userCameraSettings.Save(ToSettings());
+            SchedulePersistSettingsToDbDebounced();
     }
 
     partial void OnTimelapseIntervalSecondsChanged(int value)
@@ -1546,7 +1723,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             TimelapseIntervalSeconds = minSeconds;
 
         if (_persistEnabled)
-            _userCameraSettings.Save(ToSettings());
+            SchedulePersistSettingsToDbDebounced();
     }
 
     partial void OnTimelapseTargetFramesChanged(int value)
@@ -1555,14 +1732,14 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             TimelapseTargetFrames = 0;
 
         if (_persistEnabled)
-            _userCameraSettings.Save(ToSettings());
+            SchedulePersistSettingsToDbDebounced();
     }
 
     partial void OnCaptureFormatIndexChanged(int value)
     {
         RefreshStillFormatUiFromCaptureFormat(value);
         if (_persistEnabled)
-            _userCameraSettings.Save(ToSettings());
+            SchedulePersistSettingsToDbDebounced();
         if (IsSessionActive && _session != null)
             _ = PushCaptureFormatToCameraAsync();
     }
@@ -1667,21 +1844,21 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     partial void OnFileNamePrefixChanged(string value)
     {
         if (_persistEnabled)
-            _userCameraSettings.Save(ToSettings());
+            SchedulePersistSettingsToDbDebounced();
         ScheduleSyncSaveSettingsToCameraDebounced();
     }
 
     partial void OnShowHistogramChanged(bool value)
     {
         if (_persistEnabled)
-            _userCameraSettings.Save(ToSettings());
+            SchedulePersistSettingsToDbDebounced();
         OnPropertyChanged(nameof(IsHistogramOverlayVisible));
     }
 
     partial void OnGuideOverlayIndexChanged(int value)
     {
         if (_persistEnabled)
-            _userCameraSettings.Save(ToSettings());
+            SchedulePersistSettingsToDbDebounced();
         OnPropertyChanged(nameof(IsGuideOverlayVisible));
     }
 
@@ -2263,6 +2440,74 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         ShowFocusReticle = false;
         SdkAfFocusFrames = null;
         _previewFocusPointerDown = false;
+    }
+
+    /// <summary>
+    /// 预览滚轮相对对焦：仅在手动对焦（MF）启用相对对焦速度后，且相机会话可用时生效。
+    /// 上滚=对焦远处；下滚=对焦近处。
+    /// </summary>
+    public Task OnPreviewRelativeFocusWheelAsync(double deltaY)
+    {
+        if (!CanCrSdkCameraOps())
+            return Task.CompletedTask;
+        if (!RelativeFocusSpeedEnabled)
+            return Task.CompletedTask;
+
+        if (deltaY == 0)
+            return Task.CompletedTask;
+
+        var toFar = deltaY > 0;
+
+        var idx = SelectedRelativeFocusSpeedIndex;
+        if (idx < 0 || idx >= RelativeFocusSpeedFarInt16.Length)
+            return Task.CompletedTask;
+
+        // 相对对焦：方向与速度都编码进 Int16 数值（符号位决定远近）。
+        var encoded = toFar ? RelativeFocusSpeedFarInt16[idx] : RelativeFocusSpeedNearInt16[idx];
+
+        try
+        {
+            SonyCrSdk.EnsurePriorityKeyPcRemote();
+            SonyCrSdk.ExecuteControlCodeValue(
+                CrSdkControlCodes.FocusOperationWithInt16,
+                unchecked((ulong)(ushort)encoded));
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = "相对对焦失败: " + ex.Message;
+            return Task.CompletedTask;
+        }
+
+        CancellationTokenSource localCts;
+        lock (_relativeFocusWheelStopGate)
+        {
+            _relativeFocusWheelStopCts?.Cancel();
+            _relativeFocusWheelStopCts?.Dispose();
+            _relativeFocusWheelStopCts = new CancellationTokenSource();
+            localCts = _relativeFocusWheelStopCts;
+        }
+
+        // 让镜头在用户停止滚轮后短暂延时停止（避免只靠“停止”命令导致手感抖动）。
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(RelativeFocusWheelStopDelayMs, localCts.Token).ConfigureAwait(true);
+                if (!RelativeFocusSpeedEnabled)
+                    return;
+                // 取消当前相对对焦动作，让镜头停住。
+                SonyCrSdk.ExecuteControlCodeValue(CrSdkControlCodes.CancelFocusPosition, 0);
+            }
+            catch (TaskCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = "停止相对对焦失败: " + ex.Message;
+            }
+        });
+
+        return Task.CompletedTask;
     }
 
     public async Task OnPreviewTappedAsync(Point positionInBorder, Size borderSize)

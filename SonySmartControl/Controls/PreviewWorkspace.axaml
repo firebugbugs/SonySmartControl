@@ -22,6 +22,7 @@
                         ClipToBounds="True"
                         IsVisible="{Binding IsLivePreviewVisible}"
                         behaviors:PreviewFocusGestureBehavior.IsPreviewGestureEnabled="True"
+                                behaviors:PreviewRelativeFocusWheelBehavior.IsRelativeFocusWheelEnabled="True"
                         Cursor="Hand"
                         ToolTip.Tip="在预览上按下并按住：选对焦点并半按对焦；松开以释放。机身对焦框右上角可取消遥控触摸区域。">
                     <Grid Background="Transparent" ClipToBounds="True">

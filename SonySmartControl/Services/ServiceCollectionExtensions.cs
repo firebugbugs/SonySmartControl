@@ -14,6 +14,8 @@ public static class ServiceCollectionExtensions
     {
         services.AddSingleton<ITopLevelProvider, TopLevelProvider>();
         services.AddSingleton<IFolderPickerService, AvaloniaFolderPickerService>();
+        services.AddSingleton<ICameraSettingsProfilesStore, SqliteCameraSettingsProfilesStore>();
+        // 兼容旧接口：仍保留注册，但主流程已迁移到 SQLite 多配置。
         services.AddSingleton<IUserCameraSettingsService, UserCameraSettingsService>();
         services.AddSingleton<ICameraPreviewSessionFactory, CrSdkCameraPreviewSessionFactory>();
         services.AddSingleton<ISdCardMediaFormatService, CrSdkSdCardMediaFormatService>();

@@ -64,6 +64,25 @@ public partial class MainWindowViewModel
     [ObservableProperty] private int _selectedFocusModeIndex = -1;
 
     [ObservableProperty] private bool _focusModeEnabled;
+
+    // CrSdkFocusMode（CrDeviceProperty_FocusMode）枚举：0x0001 = 手动对焦（MF）
+    private const ulong FocusModeMf = 0x0001;
+
+    // 相对对焦速度：映射到 CrControlCode_FocusOperationWithInt16 的 Int16 取值范围
+    // Far: 0x0001..0x7FFF，Near: 0xFFFF..0x8000（符号位决定远近）
+    [ObservableProperty]
+    private ObservableCollection<ShootingChoiceItem> _relativeFocusSpeedChoices =
+        new()
+        {
+            new("慢", 0),
+            new("中", 1),
+            new("快", 2),
+            new("更快", 3),
+            new("最快", 4),
+        };
+
+    [ObservableProperty] private int _selectedRelativeFocusSpeedIndex = 1;
+    [ObservableProperty] private bool _relativeFocusSpeedEnabled;
     [ObservableProperty] private ObservableCollection<ShootingChoiceItem> _flashModeChoices = new();
     [ObservableProperty] private int _selectedFlashModeIndex = -1;
     [ObservableProperty] private bool _flashModeEnabled;
@@ -306,6 +325,7 @@ public partial class MainWindowViewModel
         IsoEnabled = false;
         ExposureBiasEnabled = false;
         FocusModeEnabled = false;
+        RelativeFocusSpeedEnabled = false;
         FlashModeEnabled = false;
         FlashCompensationEnabled = false;
         ImageQualityEnabled = false;
@@ -326,6 +346,7 @@ public partial class MainWindowViewModel
             SelectedIsoIndex = -1;
             SelectedExposureBiasIndex = -1;
             SelectedFocusModeIndex = -1;
+            SelectedRelativeFocusSpeedIndex = 1;
             SelectedFlashModeIndex = -1;
             SelectedFlashCompensationIndex = -1;
             SelectedImageQualityIndex = -1;
@@ -744,6 +765,7 @@ public partial class MainWindowViewModel
             }
 
             FocusModeEnabled = false;
+            RelativeFocusSpeedEnabled = false;
             return;
         }
 
@@ -801,6 +823,7 @@ public partial class MainWindowViewModel
             }
 
             FocusModeEnabled = false;
+            RelativeFocusSpeedEnabled = false;
             return;
         }
 
@@ -818,6 +841,7 @@ public partial class MainWindowViewModel
         }
 
         FocusModeEnabled = allow && built.Count > 0;
+        RelativeFocusSpeedEnabled = allow && current == FocusModeMf;
     }
 
     private void ApplyDriveModeFromState(CrSdkShootingState s, bool allowStill)
@@ -1311,6 +1335,10 @@ public partial class MainWindowViewModel
         {
             StatusMessage = ex.Message;
         }
+
+        // 让 UI 立刻反映：只在 MF（手动对焦）时启用相对对焦速度 + 预览滚轮相对对焦。
+        RelativeFocusSpeedEnabled = !IsVideoShootingMode &&
+                                       NormalizeFocusModeRaw(FocusModeChoices[value].Value) == FocusModeMf;
     }
 
     partial void OnSelectedFlashModeIndexChanged(int value)

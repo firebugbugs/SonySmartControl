@@ -189,6 +189,7 @@
                        IsLightDismissEnabled="True">
                     <Border Padding="14"
                             CornerRadius="12"
+                            ClipToBounds="True"
                             Background="#FFFFFF"
                             BorderBrush="#D9DEE8"
                             BorderThickness="1"
@@ -545,9 +546,26 @@
 
                     <StackPanel Grid.Row="0"
                                 Grid.Column="0"
-                                Orientation="Horizontal"
-                                Spacing="10"
+                                Spacing="6"
                                 VerticalAlignment="Top">
+                        <!-- 连接/断开上方：配置入口（默认配置自动保存；此处仅做管理/切换） -->
+                        <StackPanel Orientation="Horizontal"
+                                    Spacing="8">
+                            <Button Classes="author-icon-link"
+                                    Cursor="Hand"
+                                    Padding="8,4"
+                                    Command="{Binding OpenSettingsProfilesCommand}"
+                                    ToolTip.Tip="打开配置">
+                                <TextBlock Text="&#xEC17;"
+                                           FontFamily="avares://SonySmartControl/Assets/Fonts/iconfont.ttf#CheemsFont"
+                                           FontSize="18"
+                                           Foreground="#1F5FAF"
+                                           VerticalAlignment="Center"/>
+                            </Button>
+                        </StackPanel>
+
+                        <StackPanel Orientation="Horizontal"
+                                    Spacing="10">
                         <Button Classes="chrome-text"
                                 Content="连接"
                                 Command="{Binding OpenDeviceSearchCommand}"
@@ -571,6 +589,7 @@
                                    Text="{Binding StatusMessage}"
                                    TextWrapping="Wrap"
                                    Foreground="#4B5260"/>
+                    </StackPanel>
                     </StackPanel>
 
                     <GridSplitter Grid.Row="0"
