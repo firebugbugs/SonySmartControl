@@ -1,7 +1,3 @@
-using System.Diagnostics;
-using System;
-using System.Threading;
-using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -18,7 +14,7 @@ using SonySmartControl.ViewModels;
 namespace SonySmartControl.Views;
 
 /// <summary>
-/// 主窗口：仅保留无边框窗口 chrome、缩放边与生命周期；输入与业务由 Behaviors + ViewModel 处理。
+/// 主窗口：无边框窗口 chrome、拖拽/缩放、与必须依赖 <see cref="Window"/> API 的交互；其余由 ViewModel 与命令绑定。
 /// </summary>
 public partial class MainWindow : Window
 {
@@ -31,12 +27,13 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         Closing += OnClosingAsync;
+        Closed += OnWindowClosedScheduleHardExit;
     }
 
     private void MainWindow_OnLoaded(object? sender, RoutedEventArgs e)
     {
         if (Application.Current is App app)
-            app.Services.GetRequiredService<ITopLevelProvider>().SetTopLevel(this);
+            app.Services.GetRequiredService<IMainWindowShellService>().Attach(this);
         SyncChromeWindowState();
         ApplyTaskbarWindowIcon();
     }
@@ -127,63 +124,7 @@ public partial class MainWindow : Window
             : WindowState.Maximized;
     }
 
-    private void ChromeMinimize_OnClick(object? sender, RoutedEventArgs e) =>
-        WindowState = WindowState.Minimized;
-
-    private void ChromeMaximize_OnClick(object? sender, RoutedEventArgs e) =>
-        ToggleMaximizeRestore();
-
-    private void ChromeClose_OnClick(object? sender, RoutedEventArgs e)
-    {
-        if (CloseConfirmPopup != null)
-            CloseConfirmPopup.IsOpen = true;
-    }
-
-    private void CloseConfirmCancel_OnClick(object? sender, RoutedEventArgs e)
-    {
-        if (CloseConfirmPopup != null)
-            CloseConfirmPopup.IsOpen = false;
-    }
-
-    private void CloseConfirmAccept_OnClick(object? sender, RoutedEventArgs e)
-    {
-        if (CloseConfirmPopup != null)
-            CloseConfirmPopup.IsOpen = false;
-        Close();
-    }
-
-    private async void CopyBilibiliId_OnClick(object? sender, RoutedEventArgs e) =>
-        await CopyTextToClipboardAsync("43096314");
-
-    private async void CopyQqGroup_OnClick(object? sender, RoutedEventArgs e) =>
-        await CopyTextToClipboardAsync("1094431427");
-
-    private async Task CopyTextToClipboardAsync(string text)
-    {
-        var topLevel = TopLevel.GetTopLevel(this);
-        if (topLevel?.Clipboard == null)
-            return;
-        await topLevel.Clipboard.SetTextAsync(text);
-    }
-
-    private void OpenAuthorHomepage_OnClick(object? sender, RoutedEventArgs e) =>
-        OpenUrlInBrowser("https://www.cheems.online/");
-
-    private void OpenGithubRepo_OnClick(object? sender, RoutedEventArgs e) =>
-        OpenUrlInBrowser("https://github.com/firebugbugs/SonySmartControl");
-
-    private void OpenGiteeRepo_OnClick(object? sender, RoutedEventArgs e) =>
-        OpenUrlInBrowser("https://gitee.com/unbengable/SonySmartControl");
-
-    private static void OpenUrlInBrowser(string url)
-    {
-        Process.Start(new ProcessStartInfo
-        {
-            FileName = url,
-            UseShellExecute = true
-        });
-    }
-
+    /// <summary>作者信息 Popup 的锚点取决于点击的是图标还是标题，需在视图层设置 <see cref="Avalonia.Controls.Primitives.Popup.PlacementTarget"/>。</summary>
     private void AuthorInfoTrigger_OnPointerPressed(object? sender, PointerPressedEventArgs e)
     {
         if (sender is not Visual visual || !IsLeftButtonPressed(e, visual))
@@ -192,7 +133,8 @@ public partial class MainWindow : Window
             return;
         if (sender is Control control)
             AuthorInfoPopup.PlacementTarget = control;
-        AuthorInfoPopup.IsOpen = true;
+        if (DataContext is MainWindowViewModel vm)
+            vm.IsAuthorInfoPopupOpen = true;
         e.Handled = true;
     }
 
@@ -250,39 +192,5 @@ public partial class MainWindow : Window
         if (sender is not Visual v || !IsLeftButtonPressed(e, v))
             return;
         BeginResizeDrag(WindowEdge.SouthEast, e);
-    }
-
-    private async void OnClosingAsync(object? sender, WindowClosingEventArgs e)
-    {
-        if (sender is not Window window)
-            return;
-        if (_allowWindowClose)
-            return;
-
-        e.Cancel = true;
-        try
-        {
-            if (window.DataContext is MainWindowViewModel vm)
-                await vm.DisposeAsync().ConfigureAwait(true);
-        }
-        finally
-        {
-            _allowWindowClose = true;
-            window.Close();
-
-            // CrSDK 在部分环境下会遗留非后台线程，导致窗口关闭后进程无法自然退出。
-            // 这里做兜底：短延时后强制结束进程，确保“关闭=退出”。
-            _ = Task.Run(() =>
-            {
-                try
-                {
-                    Thread.Sleep(600);
-                    Environment.Exit(0);
-                }
-                catch
-                {
-                }
-            });
-        }
     }
 }

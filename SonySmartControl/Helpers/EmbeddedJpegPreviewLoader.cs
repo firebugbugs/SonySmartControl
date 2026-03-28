@@ -14,8 +14,18 @@ public static class EmbeddedJpegPreviewLoader
     /// <summary>在直接 <see cref="Bitmap(Stream)"/> 失败时调用；成功则调用方负责释放返回的 <see cref="Bitmap"/>。</summary>
     public static Bitmap? TryDecodeLargestEmbeddedJpeg(string path)
     {
+        return TryDecodeLargestEmbeddedJpeg(path, MinDecodedPixels);
+    }
+
+    /// <summary>
+    /// 尝试解码文件中最大的内嵌 JPEG。<paramref name="minDecodedPixels"/> 可用于放宽阈值（例如 HEIF 的 160×120 预览也需要显示）。
+    /// </summary>
+    public static Bitmap? TryDecodeLargestEmbeddedJpeg(string path, int minDecodedPixels)
+    {
         if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
             return null;
+        if (minDecodedPixels < 1)
+            minDecodedPixels = 1;
 
         byte[] bytes;
         try
@@ -46,7 +56,7 @@ public static class EmbeddedJpegPreviewLoader
                 using var ms = new MemoryStream(bytes, s, scanLen - s, writable: false, publiclyVisible: true);
                 candidate = new Bitmap(ms);
                 var area = candidate.PixelSize.Width * candidate.PixelSize.Height;
-                if (area < MinDecodedPixels)
+                if (area < minDecodedPixels)
                 {
                     candidate.Dispose();
                     continue;

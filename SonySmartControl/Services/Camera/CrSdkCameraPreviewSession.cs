@@ -1,5 +1,6 @@
 using System.IO;
 using Avalonia.Media.Imaging;
+using SonySmartControl.Helpers;
 using SonySmartControl.Interop;
 
 namespace SonySmartControl.Services.Camera;
@@ -33,19 +34,10 @@ public sealed class CrSdkCameraPreviewSession : ICameraPreviewSession
 
                     try
                     {
-                        var initOk = false;
-                        var st = SonyCrBridgeNative.SonyCr_Init();
-                        if (st != (int)SonyCrStatus.Ok)
-                            throw CrEx(st, "SonyCr_Init");
-                        initOk = true;
+                        EnsureSdkReady();
+                        RefreshEnumWithRecovery();
 
-                        st = SonyCrBridgeNative.SonyCr_EnumCameraDevicesRefresh();
-                        if (st != (int)SonyCrStatus.Ok)
-                        {
-                            throw CrEx(st, "SonyCr_EnumCameraDevicesRefresh");
-                        }
-
-                        st = SonyCrBridgeNative.SonyCr_GetCameraDeviceCount(out var count);
+                        var st = SonyCrBridgeNative.SonyCr_GetCameraDeviceCount(out var count);
                         if (st != (int)SonyCrStatus.Ok)
                             throw CrEx(st, "SonyCr_GetCameraDeviceCount");
 
@@ -78,6 +70,31 @@ public sealed class CrSdkCameraPreviewSession : ICameraPreviewSession
                 }
             },
             cancellationToken);
+
+    private static void EnsureSdkReady()
+    {
+        var st = SonyCrBridgeNative.SonyCr_Init();
+        if (st != (int)SonyCrStatus.Ok)
+            throw CrEx(st, "SonyCr_Init");
+    }
+
+    private static void RefreshEnumWithRecovery()
+    {
+        var st = SonyCrBridgeNative.SonyCr_EnumCameraDevicesRefresh();
+        if (st == (int)SonyCrStatus.Ok)
+            return;
+
+        if (st != (int)SonyCrStatus.ErrEnumFailed)
+            throw CrEx(st, "SonyCr_EnumCameraDevicesRefresh");
+
+        SonyCrBridgeNative.TryDisconnect();
+        SonyCrBridgeNative.TryReleaseSdk();
+
+        EnsureSdkReady();
+        st = SonyCrBridgeNative.SonyCr_EnumCameraDevicesRefresh();
+        if (st != (int)SonyCrStatus.Ok)
+            throw CrEx(st, "SonyCr_EnumCameraDevicesRefresh(retry)");
+    }
 
     public Task StartPreviewAsync(CancellationToken cancellationToken = default)
     {
@@ -297,6 +314,7 @@ public sealed class CrSdkCameraPreviewSession : ICameraPreviewSession
 
     public async Task DisconnectAsync()
     {
+        ShutdownTrace.Write("CrSdkCameraPreviewSession.DisconnectAsync: begin");
         Task? loop;
         lock (_gate)
         {
@@ -311,20 +329,33 @@ public sealed class CrSdkCameraPreviewSession : ICameraPreviewSession
         {
             try
             {
+                ShutdownTrace.Write("CrSdkCameraPreviewSession.DisconnectAsync: waiting liveview loop");
                 await loop.ConfigureAwait(false);
+                ShutdownTrace.Write("CrSdkCameraPreviewSession.DisconnectAsync: liveview loop completed");
             }
             catch (OperationCanceledException)
             {
+                ShutdownTrace.Write("CrSdkCameraPreviewSession.DisconnectAsync: liveview loop canceled");
+            }
+            catch (Exception ex)
+            {
+                ShutdownTrace.Write("CrSdkCameraPreviewSession.DisconnectAsync: liveview loop faulted (ignored)", ex);
             }
         }
 
-        SonyCrBridgeNative.TryDisconnect();
-        lock (_gate)
+        // TryDisconnect 可能长时间阻塞 native；若在 UI 线程上同步调用会导致关窗路径卡在 DisposeAsync().AsTask()。
+        ShutdownTrace.Write("CrSdkCameraPreviewSession.DisconnectAsync: calling SonyCrBridgeNative.TryDisconnect() (threadpool)");
+        await Task.Run(() =>
         {
-            _sdkConnected = false;
-            ConnectedCameraModel = null;
-            _liveViewEnabled = true;
-        }
+            SonyCrBridgeNative.TryDisconnect();
+            lock (_gate)
+            {
+                _sdkConnected = false;
+                ConnectedCameraModel = null;
+                _liveViewEnabled = true;
+            }
+        }).ConfigureAwait(false);
+        ShutdownTrace.Write("CrSdkCameraPreviewSession.DisconnectAsync: end");
     }
 
     public Task RequestTouchAutofocusAsync(double normalizedX, double normalizedY, CancellationToken cancellationToken = default)
@@ -465,11 +496,14 @@ public sealed class CrSdkCameraPreviewSession : ICameraPreviewSession
     {
         try
         {
+            ShutdownTrace.Write("CrSdkCameraPreviewSession.DisposeAsync: begin");
             await DisconnectAsync().ConfigureAwait(false);
+            ShutdownTrace.Write("CrSdkCameraPreviewSession.DisposeAsync: end");
         }
         catch
         {
             // 断开或后台 Live View 循环异常时仍须尽力释放 native，避免向上冒泡导致界面任务崩溃。
+            ShutdownTrace.Write("CrSdkCameraPreviewSession.DisposeAsync: exception swallowed");
         }
     }
 

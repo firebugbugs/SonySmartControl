@@ -150,6 +150,14 @@ SONY_CR_API SonyCrStatus SonyCr_SendCommand(unsigned int commandId, unsigned int
 /** 对应 SCRSDK::SetDeviceSetting；key 见 CrDefines.h SettingKey（如 0 = EnableLiveView）。 */
 SONY_CR_API SonyCrStatus SonyCr_SetDeviceSetting(unsigned int key, unsigned int value);
 
+/**
+ * 遥控保存图片尺寸（CrDeviceProperty_RemoteSaveImageSize）：
+ * - 1 = LargeSize（避免遥控保存落地 160x120 等小图）
+ * - 2 = SmallSize
+ * CrDataType: UInt8
+ */
+SONY_CR_API SonyCrStatus SonyCr_SetRemoteSaveImageSize(unsigned int value);
+
 /** 获取桥接层统计到的相机会话上传/下载总字节数（会话维度，非系统总网速）。 */
 SONY_CR_API SonyCrStatus SonyCr_GetTransportStats(unsigned long long* outUploadBytes, unsigned long long* outDownloadBytes);
 

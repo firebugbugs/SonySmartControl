@@ -23,6 +23,7 @@
                HorizontalAlignment="Left"
                VerticalAlignment="Top"
                RenderTransformOrigin="0,0"
+               RenderOptions.BitmapInterpolationMode="HighQuality"
                IsHitTestVisible="False"/>
     </Border>
 </UserControl>

@@ -5,6 +5,11 @@
       <map>
         <entry key="Controls/FilmstripPhotoInfoTip.axaml" value="SonySmartControl.csproj" />
         <entry key="Controls/FilmstripPhotoItem.axaml" value="SonySmartControl.csproj" />
+        <entry key="Controls/WheelPickerCombo.axaml" value="SonySmartControl.csproj" />
+        <entry key="Views/DeviceSearchWindow.axaml" value="SonySmartControl.csproj" />
+        <entry key="Views/LogHistoryWindow.axaml" value="SonySmartControl.csproj" />
+        <entry key="Views/MainWindow.axaml" value="SonySmartControl.csproj" />
+        <entry key="Views/SettingsProfilesWindow.axaml" value="SonySmartControl.csproj" />
       </map>
     </option>
   </component>

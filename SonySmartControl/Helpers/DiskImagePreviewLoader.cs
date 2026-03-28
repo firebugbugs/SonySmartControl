@@ -45,11 +45,13 @@ public static class DiskImagePreviewLoader
         }
         catch
         {
-            // HEIF 先走系统解码，避免误用文件内极小 JPEG 预览（常见 160x120）。
+            // 重要：Windows Shell 解码 HEIF 可能弹出第三方解码器/激活窗口（影响拍摄体验）。
+            // 本程序不提供 HEIF 解码；仅尝试读取文件内嵌 JPEG 预览（通常分辨率较小），不触发系统解码。
             if (IsHeifLike(path))
             {
-                full = WindowsShellImageDecoder.TryDecode(path, 1024);
-                full ??= EmbeddedJpegPreviewLoader.TryDecodeLargestEmbeddedJpeg(path);
+                // HEIF 内嵌预览常只有 160×120，也要显示出来（因此放宽最小像素阈值）。
+                full = EmbeddedJpegPreviewLoader.TryDecodeLargestEmbeddedJpeg(path, minDecodedPixels: 1);
+                full ??= UnsupportedFormatThumbnailFactory.CreateHeifPlaceholder(640, 480);
             }
             else
             {
@@ -107,11 +109,10 @@ public static class DiskImagePreviewLoader
         }
         catch
         {
-            // 全图优先系统解码，HEIF 场景不优先内嵌 JPEG 预览。
+            // 同 LoadScaled：避免 HEIF 解码触发激活弹窗。
             if (IsHeifLike(path))
             {
-                decoded = WindowsShellImageDecoder.TryDecode(path, 2048);
-                decoded ??= EmbeddedJpegPreviewLoader.TryDecodeLargestEmbeddedJpeg(path);
+                decoded = EmbeddedJpegPreviewLoader.TryDecodeLargestEmbeddedJpeg(path);
             }
             else
             {

@@ -650,6 +650,56 @@ internal static class SonyCrBridgeNative
         return true;
     }
 
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate int SonyCr_SetRemoteSaveImageSizeDelegate(uint value);
+
+    private static readonly object RemoteSaveImageSizeLock = new();
+    private static SonyCr_SetRemoteSaveImageSizeDelegate? _setRemoteSaveImageSize;
+    private static bool _remoteSaveImageSizeExportUnavailable;
+
+    /// <summary>
+    /// 设定遥控保存图片尺寸（CrDeviceProperty_RemoteSaveImageSize）：1=Large，2=Small。
+    /// 旧 DLL 无导出时返回 false；SDK 非 Ok 时抛异常。
+    /// </summary>
+    internal static bool TrySetRemoteSaveImageSize(uint value)
+    {
+        if (value is < 1 or > 2)
+            throw new ArgumentOutOfRangeException(nameof(value));
+
+        lock (RemoteSaveImageSizeLock)
+        {
+            if (_remoteSaveImageSizeExportUnavailable)
+                return false;
+            if (_setRemoteSaveImageSize == null)
+            {
+                IntPtr h;
+                try
+                {
+                    h = NativeLibrary.Load(Dll);
+                }
+                catch (DllNotFoundException)
+                {
+                    _remoteSaveImageSizeExportUnavailable = true;
+                    return false;
+                }
+
+                if (!NativeLibrary.TryGetExport(h, "SonyCr_SetRemoteSaveImageSize", out var addr))
+                {
+                    _remoteSaveImageSizeExportUnavailable = true;
+                    return false;
+                }
+
+                _setRemoteSaveImageSize =
+                    Marshal.GetDelegateForFunctionPointer<SonyCr_SetRemoteSaveImageSizeDelegate>(addr);
+            }
+        }
+
+        var st = _setRemoteSaveImageSize!(value);
+        if (st != (int)SonyCrStatus.Ok)
+            throw new InvalidOperationException($"SonyCr_SetRemoteSaveImageSize 失败: {(SonyCrStatus)st} ({st})");
+        return true;
+    }
+
     internal static string? GetCameraModelUtf8(int index)
     {
         var st = SonyCr_GetCameraModelUtf8Length(index, out var len);

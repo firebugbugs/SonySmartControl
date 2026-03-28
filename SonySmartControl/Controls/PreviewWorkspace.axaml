@@ -55,8 +55,23 @@
                         </Button>
                     </Grid>
                 </Border>
-                <controls:PhotoPanZoomViewer IsVisible="{Binding IsStaticReviewVisible}"
-                                             Source="{Binding StaticReviewImage}"/>
+                <Grid IsVisible="{Binding IsStaticReviewVisible}">
+                    <controls:PhotoPanZoomViewer Source="{Binding StaticReviewImage}"/>
+                    <Border IsVisible="{Binding IsStaticReviewHintVisible}"
+                            Background="#B0101010"
+                            HorizontalAlignment="Stretch"
+                            VerticalAlignment="Stretch">
+                        <TextBlock Text="{Binding StaticReviewHint}"
+                                   Foreground="#FFFFFF"
+                                   FontSize="16"
+                                   TextAlignment="Center"
+                                   VerticalAlignment="Center"
+                                   HorizontalAlignment="Center"
+                                   MaxWidth="520"
+                                   TextWrapping="Wrap"
+                                   Margin="24"/>
+                    </Border>
+                </Grid>
             </Grid>
         </Border>
 

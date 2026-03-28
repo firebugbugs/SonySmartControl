@@ -156,6 +156,12 @@ public partial class MainWindowViewModel
     private bool _liveViewSyncFromSession;
     private bool _liveViewSwitching;
 
+    internal bool LiveViewSyncFromSession
+    {
+        get => _liveViewSyncFromSession;
+        set => _liveViewSyncFromSession = value;
+    }
+
     private static readonly TimeSpan ShootingUserEditPollSuppressDuration = TimeSpan.FromMilliseconds(2000);
 
     private static bool ShouldSuppressPollBind(ref DateTime? suppressUntilUtc)
@@ -193,9 +199,9 @@ public partial class MainWindowViewModel
         ClearShootingUi();
     }
 
-    private void UpdateShootingPollForSession()
+    internal void UpdateShootingPollForSession()
     {
-        if (IsSessionActive && _session != null)
+        if (IsSessionActive && _cameraOps.Session != null)
         {
             EnsureShootingTimer();
             _shootingPollTimer!.Start();
@@ -238,7 +244,7 @@ public partial class MainWindowViewModel
 
     private void RefreshTransportSpeedFromSession()
     {
-        if (!IsSessionActive || _session == null || !_session.TryGetTransportStats(out var up, out var down))
+        if (!IsSessionActive || _cameraOps.Session == null || !_cameraOps.Session.TryGetTransportStats(out var up, out var down))
         {
             ResetTransportSpeedDisplay();
             return;
@@ -363,9 +369,9 @@ public partial class MainWindowViewModel
 
     private void ApplyShootingJsonFromSession()
     {
-        if (!IsSessionActive || _session == null)
+        if (!IsSessionActive || _cameraOps.Session == null)
             return;
-        var json = _session.TryGetShootingStateJson();
+        var json = _cameraOps.Session.TryGetShootingStateJson();
         ApplyShootingJson(json);
     }
 
@@ -628,7 +634,7 @@ public partial class MainWindowViewModel
 
     partial void OnLiveViewEnabledChanged(bool value)
     {
-        if (_liveViewSyncFromSession || !IsSessionActive || _session == null || _liveViewSwitching)
+        if (_liveViewSyncFromSession || !IsSessionActive || _cameraOps.Session == null || _liveViewSwitching)
             return;
 
         _ = ApplyLiveViewEnabledAsync(value);
@@ -636,14 +642,14 @@ public partial class MainWindowViewModel
 
     private async Task ApplyLiveViewEnabledAsync(bool enabled)
     {
-        if (_session == null)
+        if (_cameraOps.Session == null)
             return;
 
         _liveViewSwitching = true;
         LiveViewEnabledControlEnabled = false;
         try
         {
-            await _session.SetLiveViewEnabledAsync(enabled).ConfigureAwait(true);
+            await _cameraOps.Session.SetLiveViewEnabledAsync(enabled).ConfigureAwait(true);
             if (!enabled)
             {
                 PreviewImage = null;
@@ -651,7 +657,7 @@ public partial class MainWindowViewModel
                 SdkAfFocusFrames = null;
                 try
                 {
-                    var probe = await _session.ProbeLiveViewDisabledStateAsync().ConfigureAwait(true);
+                    var probe = await _cameraOps.Session.ProbeLiveViewDisabledStateAsync().ConfigureAwait(true);
                     StatusMessage = probe.IsLikelyStopped
                         ? $"LiveView 已关闭：停流探测通过（{probe.TotalProbes} 次探测均无新帧），拍照仍可用。"
                         : $"LiveView 已关闭：但停流探测发现仍有帧（{probe.FramesDetectedProbes}/{probe.TotalProbes}）。可能仅关闭了显示链路。";

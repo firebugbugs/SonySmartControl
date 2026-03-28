@@ -135,7 +135,7 @@
                                     Spacing="2">
                             <Button x:Name="ChromeMinimize"
                                     Classes="chrome-caption-btn"
-                                    Click="ChromeMinimize_OnClick"
+                                    Command="{Binding MinimizeWindowCommand}"
                                     ToolTip.Tip="最小化">
                                 <TextBlock Text="&#xE65A;"
                                            FontFamily="avares://SonySmartControl/Assets/Fonts/iconfont.ttf#CheemsFont"
@@ -146,7 +146,7 @@
                             </Button>
                             <Button x:Name="ChromeMaximize"
                                     Classes="chrome-caption-btn"
-                                    Click="ChromeMaximize_OnClick"
+                                    Command="{Binding ToggleMaximizeWindowCommand}"
                                     ToolTip.Tip="最大化">
                                 <Panel>
                                     <TextBlock x:Name="MaximizeGlyph"
@@ -168,7 +168,7 @@
                             </Button>
                             <Button x:Name="ChromeClose"
                                     Classes="chrome-caption-close"
-                                    Click="ChromeClose_OnClick"
+                                    Command="{Binding ShowCloseConfirmCommand}"
                                     Margin="2,0,6,0"
                                     Background="#EA4235"
                                     CornerRadius="8"
@@ -186,6 +186,7 @@
                 <Popup x:Name="AuthorInfoPopup"
                        Placement="Bottom"
                        PlacementTarget="{Binding #AppTitleText}"
+                       IsOpen="{Binding IsAuthorInfoPopupOpen, Mode=TwoWay}"
                        IsLightDismissEnabled="True">
                     <Border Padding="14"
                             CornerRadius="12"
@@ -233,7 +234,7 @@
                                             Padding="10,2"
                                             Height="24"
                                             VerticalAlignment="Center"
-                                            Click="CopyBilibiliId_OnClick"
+                                            Command="{Binding CopyBilibiliIdCommand}"
                                             Content="复制"/>
                                 </Grid>
                             </Border>
@@ -259,7 +260,7 @@
                                             Padding="10,2"
                                             Height="24"
                                             VerticalAlignment="Center"
-                                            Click="CopyQqGroup_OnClick"
+                                            Command="{Binding CopyQqGroupCommand}"
                                             Content="复制"/>
                                 </Grid>
                             </Border>
@@ -268,7 +269,7 @@
                                         Spacing="2">
                                 <Button Classes="author-icon-link"
                                         Cursor="Hand"
-                                        Click="OpenAuthorHomepage_OnClick"
+                                        Command="{Binding OpenAuthorHomepageCommand}"
                                         ToolTip.Tip="前往作者主页">
                                     <TextBlock Text="&#xE73B;"
                                                FontFamily="avares://SonySmartControl/Assets/Fonts/iconfont.ttf#CheemsFont"
@@ -278,7 +279,7 @@
                                 </Button>
                                 <Button Classes="author-icon-link"
                                         Cursor="Hand"
-                                        Click="OpenGithubRepo_OnClick"
+                                        Command="{Binding OpenGithubRepoCommand}"
                                         ToolTip.Tip="GitHub 仓库">
                                     <TextBlock Text="&#xE603;"
                                                FontFamily="avares://SonySmartControl/Assets/Fonts/iconfont.ttf#CheemsFont"
@@ -288,7 +289,7 @@
                                 </Button>
                                 <Button Classes="author-icon-link"
                                         Cursor="Hand"
-                                        Click="OpenGiteeRepo_OnClick"
+                                        Command="{Binding OpenGiteeRepoCommand}"
                                         ToolTip.Tip="Gitee 仓库">
                                     <TextBlock Text="&#xE6E3;"
                                                FontFamily="avares://SonySmartControl/Assets/Fonts/iconfont.ttf#CheemsFont"
@@ -303,6 +304,7 @@
                 <Popup x:Name="CloseConfirmPopup"
                        Placement="BottomEdgeAlignedRight"
                        PlacementTarget="{Binding #ChromeClose}"
+                       IsOpen="{Binding IsCloseConfirmPopupOpen, Mode=TwoWay}"
                        IsLightDismissEnabled="True">
                     <Border Padding="12"
                             CornerRadius="12"
@@ -324,10 +326,10 @@
                                         HorizontalAlignment="Right">
                                 <Button Classes="popup-lite"
                                         Content="取消"
-                                        Click="CloseConfirmCancel_OnClick"/>
+                                        Command="{Binding CancelCloseConfirmCommand}"/>
                                 <Button Classes="popup-danger"
                                         Content="确认关闭"
-                                        Click="CloseConfirmAccept_OnClick"/>
+                                        Command="{Binding ConfirmCloseCommand}"/>
                             </StackPanel>
                         </StackPanel>
                     </Border>

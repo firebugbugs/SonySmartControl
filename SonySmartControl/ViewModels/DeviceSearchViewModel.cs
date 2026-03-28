@@ -98,6 +98,10 @@ public partial class DeviceSearchViewModel : ViewModelBase
         if (SelectedDevice == null || _main.IsConnecting || _main.IsSessionActive)
             return;
 
+        IsSearching = true;
+        ErrorMessage = null;
+        ShowDiscoveryError = false;
+        StatusHint = "正在连接：请在相机端确认配对/连接提示…";
         _appLogService.Append(
             $"设备搜索：用户选择连接 [{SelectedDevice.OrdinalLabel}] {SelectedDevice.ModelName} ({SelectedDevice.ConnectionTypeText}/{SelectedDevice.EndpointText})。");
         var isIp = string.Equals(SelectedDevice.ConnectionTypeText, "IP", StringComparison.OrdinalIgnoreCase);
@@ -107,6 +111,15 @@ public partial class DeviceSearchViewModel : ViewModelBase
                 ? $"设备搜索：连接成功 [{SelectedDevice.OrdinalLabel}] {SelectedDevice.ModelName}。"
                 : $"设备搜索：连接失败 [{SelectedDevice.OrdinalLabel}] {SelectedDevice.ModelName}。");
         if (ok)
+        {
             _closeWindow();
+            return;
+        }
+
+        // 失败时保持窗口打开并给出提示：主窗口状态栏也会同时更新更详细的调试信息。
+        ErrorMessage = "连接失败：请查看主窗口底部状态提示（含 Connect 调试信息），并确认相机端已弹出配对确认。";
+        ShowDiscoveryError = true;
+        StatusHint = "连接失败。你可以点击「重新搜索」或再次尝试连接。";
+        IsSearching = false;
     }
 }

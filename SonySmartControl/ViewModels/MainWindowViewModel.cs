@@ -31,12 +31,13 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     private readonly ICameraSettingsProfilesStore _profilesStore;
     private readonly IUserCameraSettingsService _userCameraSettings;
     private readonly IFolderPickerService _folderPicker;
-    private readonly ICameraPreviewSessionFactory _cameraPreviewSessionFactory;
-    private readonly ISdCardMediaFormatService _sdCardMediaFormat;
+    private readonly MainWindowCameraOperations _cameraOps;
     private readonly ICrSdkShootingWriteService _crSdkShootingWrite;
     private readonly IAppLogService _appLogService;
     private readonly IServiceProvider _serviceProvider;
     private readonly ITopLevelProvider _topLevelProvider;
+    private readonly IMainWindowShellService _mainWindowShell;
+    private readonly IExternalUriLauncher _externalUriLauncher;
 
     // ---- 互斥窗口：设备搜索 / 日志窗口（同一时间只允许打开一个）----
     private readonly object _exclusiveToolWindowGate = new();
@@ -360,39 +361,29 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
 
     public string VideoSidebarModeTextColor => IsVideoSidebarMode ? "#FFFFFF" : "#4286F5";
 
-    private ICameraPreviewSession? _session;
-
-    /// <summary>正在执行 <see cref="ConnectAsync"/>、尚未赋给 <see cref="_session"/> 的会话；关窗口时必须释放，否则会话与原生线程泄漏。</summary>
-    private ICameraPreviewSession? _connectingSession;
-
-    private CancellationTokenSource? _connectCts;
-
-    private Bitmap? _lastFrameOwner;
-
-    private bool _sdCardUsageRefreshInFlight;
-    private CancellationTokenSource? _sdCardUsageRefreshCts;
-
     /// <summary>运行期由 DI 解析；依赖具体服务实现。</summary>
     public MainWindowViewModel(
         ICameraSettingsProfilesStore profilesStore,
         IUserCameraSettingsService userCameraSettings,
         IFolderPickerService folderPicker,
-        ICameraPreviewSessionFactory cameraPreviewSessionFactory,
-        ISdCardMediaFormatService sdCardMediaFormat,
+        MainWindowCameraOperations cameraOps,
         ICrSdkShootingWriteService crSdkShootingWrite,
         IAppLogService appLogService,
         IServiceProvider serviceProvider,
-        ITopLevelProvider topLevelProvider)
+        ITopLevelProvider topLevelProvider,
+        IMainWindowShellService mainWindowShell,
+        IExternalUriLauncher externalUriLauncher)
     {
         _profilesStore = profilesStore;
         _userCameraSettings = userCameraSettings;
         _folderPicker = folderPicker;
-        _cameraPreviewSessionFactory = cameraPreviewSessionFactory;
-        _sdCardMediaFormat = sdCardMediaFormat;
+        _cameraOps = cameraOps;
         _crSdkShootingWrite = crSdkShootingWrite;
         _appLogService = appLogService;
         _serviceProvider = serviceProvider;
         _topLevelProvider = topLevelProvider;
+        _mainWindowShell = mainWindowShell;
+        _externalUriLauncher = externalUriLauncher;
         _persistEnabled = false;
         ApplySettingsToUi(new CameraUserSettings());
         _persistEnabled = true;
@@ -409,15 +400,19 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             new SqliteCameraSettingsProfilesStore(),
             new UserCameraSettingsService(),
             new AvaloniaFolderPickerService(new TopLevelProvider()),
-            new CrSdkCameraPreviewSessionFactory(),
-            new CrSdkSdCardMediaFormatService(),
+            new MainWindowCameraOperations(
+                new CrSdkCameraPreviewSessionFactory(),
+                new CrSdkSdCardMediaFormatService(),
+                () => throw new InvalidOperationException()),
             new CrSdkShootingWriteService(),
             DesignTimeAppLog,
             new ServiceCollection()
                 .AddSingleton<IAppLogService>(DesignTimeAppLog)
                 .AddTransient<LogHistoryViewModel>()
                 .BuildServiceProvider(),
-            new TopLevelProvider())
+            new TopLevelProvider(),
+            new MainWindowShellService(new TopLevelProvider()),
+            new ProcessExternalUriLauncher())
     {
     }
 
@@ -569,7 +564,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
 
             // 切换配置后，把关键保存设置同步到相机（避免仍按旧设置拍摄）
             ScheduleSyncSaveSettingsToCameraDebounced();
-            if (IsSessionActive && _session != null)
+            if (IsSessionActive && _cameraOps.Session != null)
                 _ = PushCaptureFormatToCameraAsync();
         }
         catch
@@ -839,7 +834,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     [RelayCommand(CanExecute = nameof(CanStartTimelapse))]
     private async Task StartTimelapseAsync()
     {
-        if (!CanCrSdkCameraOps() || _session == null)
+        if (!CanCrSdkCameraOps() || _cameraOps.Session == null)
         {
             StatusMessage = "未连接相机，无法开始延时摄影。";
             return;
@@ -1089,10 +1084,10 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         await _shutterPipelineLock.WaitAsync(ct).ConfigureAwait(true);
         try
         {
-            if (_session == null)
+            if (_cameraOps.Session == null)
                 return;
 
-            await _session
+            await _cameraOps.Session
                 .CaptureStillAsync(saveDirectory, prefix, fileType, ct)
                 .ConfigureAwait(true);
         }
@@ -1126,9 +1121,9 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             await Task.Delay(400).ConfigureAwait(true);
             if (version != _saveSettingsCameraSyncVersion)
                 return;
-            if (!IsSessionActive || _session == null)
+            if (!IsSessionActive || _cameraOps.Session == null)
                 return;
-            await _session
+            await _cameraOps.Session
                 .ApplyCameraSaveSettingsAsync(SaveDirectory, FileNamePrefix, IndexToFileType(CaptureFormatIndex))
                 .ConfigureAwait(true);
         }
@@ -1200,7 +1195,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     /// <summary>对焦按钮指针/触摸按下：若已标记对焦点则先遥控触摸该点，再 S1 Locked。</summary>
     public async Task FocusPointerPressedAsync()
     {
-        if (!CanCrSdkCameraOps() || _session == null)
+        if (!CanCrSdkCameraOps() || _cameraOps.Session == null)
             return;
 
         if (_captureTaskActive)
@@ -1223,7 +1218,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
                     return;
                 }
 
-                await _session.BeginHalfPressFocusAsync().ConfigureAwait(true);
+                await _cameraOps.Session.BeginHalfPressFocusAsync().ConfigureAwait(true);
                 releaseWaitOnFailure = false;
             }
             catch (Exception ex)
@@ -1250,12 +1245,12 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             _focusS1Held = false;
         }
 
-        if (!shouldRelease || _session == null)
+        if (!shouldRelease || _cameraOps.Session == null)
             return;
 
         try
         {
-            await _session.EndHalfPressFocusAsync().ConfigureAwait(true);
+            await _cameraOps.Session.EndHalfPressFocusAsync().ConfigureAwait(true);
         }
         catch (Exception ex)
         {
@@ -1276,7 +1271,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     /// <summary>拍照按钮按下：单张为半按 S1；连拍驱动模式下在半按完成后发送快门全按并保持（Release Down）。</summary>
     public async Task CapturePointerPressedAsync()
     {
-        if (!CanCrSdkCameraOps() || _session == null)
+        if (!CanCrSdkCameraOps() || _cameraOps.Session == null)
             return;
 
         if (_captureTaskActive)
@@ -1305,7 +1300,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
                     return;
                 }
 
-                var halfPressTask = _session.BeginHalfPressFocusAsync();
+                var halfPressTask = _cameraOps.Session.BeginHalfPressFocusAsync();
                 _captureHalfPressInFlight = halfPressTask;
                 try
                 {
@@ -1316,7 +1311,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
                     {
                         try
                         {
-                            await _session
+                            await _cameraOps.Session
                                 .CaptureBurstHoldDownAsync(
                                     SaveDirectory,
                                     FileNamePrefix,
@@ -1330,7 +1325,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
                                 _captureShutterHeld = false;
                             try
                             {
-                                await _session.EndHalfPressFocusAsync().ConfigureAwait(true);
+                                await _cameraOps.Session.EndHalfPressFocusAsync().ConfigureAwait(true);
                             }
                             catch
                             {
@@ -1363,7 +1358,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     /// <summary>半按前：若用户在预览上标记过点且点击时尚未发送触摸，则补发一次遥控触摸。返回 false 时不应继续半按。</summary>
     private async Task<bool> TryApplyPendingFocusTouchBeforeHalfPressAsync()
     {
-        if (!_hasPendingFocusPoint || _session == null)
+        if (!_hasPendingFocusPoint || _cameraOps.Session == null)
             return true;
 
         if (_lastShootingState?.RemoteTouchEnable != null && (_lastShootingState.RemoteTouchEnable.Value & 0xFF) == 0)
@@ -1375,7 +1370,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         if (_touchAfAlreadySentForPendingPoint)
             return true;
 
-        await _session
+        await _cameraOps.Session
             .RequestTouchAutofocusAsync(_pendingFocusNx, _pendingFocusNy)
             .ConfigureAwait(true);
         return true;
@@ -1403,12 +1398,12 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         // BeginHalfPressFocusAsync 在后台线程执行；若此处不等待完成就发 Release，机身可能仍处于未半按状态。
         await (_captureHalfPressInFlight ?? Task.CompletedTask).ConfigureAwait(true);
 
-        if (_session != null && _captureBurstShutterDownActive)
+        if (_cameraOps.Session != null && _captureBurstShutterDownActive)
         {
             SetCaptureTaskActive(true);
             try
             {
-                await _session.CaptureBurstHoldEndAsync().ConfigureAwait(true);
+                await _cameraOps.Session.CaptureBurstHoldEndAsync().ConfigureAwait(true);
                 _captureBurstShutterDownActive = false;
                 StatusMessage = "连拍已结束；若未看到全部文件，请查看保存目录与传输进度。";
                 _ = RegisterRecentCaptureAsync();
@@ -1436,10 +1431,10 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         SetCaptureTaskActive(true);
         try
         {
-            if (_session != null)
+            if (_cameraOps.Session != null)
             {
                 var capturedType = IndexToFileType(CaptureFormatIndex);
-                await _session
+                await _cameraOps.Session
                     .CaptureStillReleaseAfterHalfPressAsync(
                         SaveDirectory,
                         FileNamePrefix,
@@ -1491,7 +1486,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             return;
         }
 
-        if (_session == null)
+        if (_cameraOps.Session == null)
         {
             try
             {
@@ -1508,9 +1503,9 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         try
         {
             if (burstDown)
-                await _session.CaptureBurstHoldEndAsync().ConfigureAwait(true);
+                await _cameraOps.Session.CaptureBurstHoldEndAsync().ConfigureAwait(true);
             else
-                await _session.EndHalfPressFocusAsync().ConfigureAwait(true);
+                await _cameraOps.Session.EndHalfPressFocusAsync().ConfigureAwait(true);
             lock (_shutterHoldLock)
                 _focusS1Held = false;
         }
@@ -1541,11 +1536,11 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         _touchAfAlreadySentForPendingPoint = false;
         ShowFocusReticle = false;
 
-        if (_session != null && IsSessionActive)
+        if (_cameraOps.Session != null && IsSessionActive)
         {
             try
             {
-                await _session.CancelRemoteTouchOperationAsync().ConfigureAwait(true);
+                await _cameraOps.Session.CancelRemoteTouchOperationAsync().ConfigureAwait(true);
                 StatusMessage = "已取消触摸对焦点，并已通知机身恢复自动对焦区域。";
             }
             catch (Exception ex)
@@ -1576,7 +1571,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             _captureHalfPressInFlight = null;
         }
 
-        if (!needUnlock || _session == null)
+        if (!needUnlock || _cameraOps.Session == null)
         {
             SetCaptureTaskActive(false);
             return;
@@ -1585,9 +1580,9 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         try
         {
             if (burstDown)
-                await _session.CaptureBurstHoldEndAsync().ConfigureAwait(true);
+                await _cameraOps.Session.CaptureBurstHoldEndAsync().ConfigureAwait(true);
             else
-                await _session.EndHalfPressFocusAsync().ConfigureAwait(true);
+                await _cameraOps.Session.EndHalfPressFocusAsync().ConfigureAwait(true);
         }
         catch
         {
@@ -1608,7 +1603,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         SetCaptureTaskActive(false);
     }
 
-    private bool CanCrSdkCameraOps() => IsSessionActive && _session != null;
+    private bool CanCrSdkCameraOps() => IsSessionActive && _cameraOps.Session != null;
 
     /// <summary>
     /// HEIF 机型拍后常遇到“机身仍在写卡，立即拉取返回 busy/-8”。
@@ -1616,6 +1611,9 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     /// </summary>
     private async Task TryRepairHeifOriginalInBackgroundAsync(CrSdkFileType capturedType, string saveDir)
     {
+        // 重要：内容拉取会触发相机端“导入影像”弹窗；为满足“相机端不能出现弹窗”，禁用自动后台补拉。
+        return;
+
         if (!IsSessionActive)
             return;
         if (capturedType is not (CrSdkFileType.Heif or CrSdkFileType.RawHeif))
@@ -1626,16 +1624,17 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         var dir = saveDir.Trim();
         var pullCount = capturedType == CrSdkFileType.RawHeif ? 2 : 1;
         Exception? last = null;
-        var delaysMs = new[] { 1400, 2600, 4200 };
+        // HEIF 写卡与内容列表刷新通常更慢，尤其是高码率/高速连拍后；按官方 ContentsTransfer/RemoteTransfer 的 Busy 警告做更长等待。
+        var delaysMs = new[] { 2000, 4500, 8000, 12000 };
         var shouldResumeLiveView = false;
         try
         {
             try
             {
                 // 关键：停止会话层 LiveView 拉帧线程，避免与内容传输并发导致 -8。
-                if (_session != null && LiveViewEnabled)
+                if (_cameraOps.Session != null && LiveViewEnabled)
                 {
-                    await _session.SetLiveViewEnabledAsync(false).ConfigureAwait(true);
+                    await _cameraOps.Session.SetLiveViewEnabledAsync(false).ConfigureAwait(true);
                     shouldResumeLiveView = true;
                 }
             }
@@ -1669,11 +1668,11 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         }
         finally
         {
-            if (shouldResumeLiveView && _session != null && IsSessionActive)
+            if (shouldResumeLiveView && _cameraOps.Session != null && IsSessionActive)
             {
                 try
                 {
-                    await _session.SetLiveViewEnabledAsync(true).ConfigureAwait(true);
+                    await _cameraOps.Session.SetLiveViewEnabledAsync(true).ConfigureAwait(true);
                 }
                 catch
                 {
@@ -1737,7 +1736,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         RefreshStillFormatUiFromCaptureFormat(value);
         if (_persistEnabled)
             SchedulePersistSettingsToDbDebounced();
-        if (IsSessionActive && _session != null)
+        if (IsSessionActive && _cameraOps.Session != null)
             _ = PushCaptureFormatToCameraAsync();
     }
 
@@ -1824,11 +1823,11 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     /// <summary>用户更改文件格式后立即同步 <see cref="CrSdkDevicePropertyCodes.FileType"/>，避免仍按旧格式拍摄。</summary>
     private async Task PushCaptureFormatToCameraAsync()
     {
-        if (_session == null)
+        if (_cameraOps.Session == null)
             return;
         try
         {
-            await _session
+            await _cameraOps.Session
                 .ApplyCameraSaveSettingsAsync(SaveDirectory, FileNamePrefix, IndexToFileType(CaptureFormatIndex))
                 .ConfigureAwait(true);
         }
@@ -1974,7 +1973,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             TimelapseTargetFrames = TimelapseTargetFrames,
         };
 
-    private static CrSdkFileType IndexToFileType(int index) =>
+    internal static CrSdkFileType IndexToFileType(int index) =>
         index switch
         {
             1 => CrSdkFileType.Raw,
@@ -2055,391 +2054,24 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     }
 
     /// <summary>由设备搜索窗口调用：连接用户在列表中选择的设备（CrSDK 枚举索引）。</summary>
-    public async Task<bool> ConnectToCameraAsync(int deviceIndex, bool isIp = false)
-    {
-        if (_session != null || IsConnecting)
-            return false;
+    public Task<bool> ConnectToCameraAsync(int deviceIndex, bool isIp = false) =>
+        _cameraOps.ConnectToCameraAsync(deviceIndex, isIp);
 
-        IsConnecting = true;
-        StatusMessage = isIp
-            ? "正在通过 IP 连接相机：请在相机端确认配对/连接提示（最长等待约 60 秒）…"
-            : "正在连接相机，请稍候…";
-        ConnectedCameraModelName = "未知";
-        ConnectedCameraLensModelName = "暂未识别";
-        ConnectedCameraBatteryLevelText = "暂未识别";
-        SdCardUsageDebugText = "";
-
-        var session = _cameraPreviewSessionFactory.Create();
-
-        session.FrameReceived += OnFrameReceived;
-        _connectCts = new CancellationTokenSource();
-        _connectingSession = session;
-
-        try
-        {
-            try
-            {
-                await session.ConnectAsync(deviceIndex, _connectCts.Token).ConfigureAwait(true);
-            }
-            catch (Exception ex)
-            {
-                session.FrameReceived -= OnFrameReceived;
-                if (_connectingSession == session)
-                {
-                    _connectingSession = null;
-                    try
-                    {
-                        await session.DisposeAsync().ConfigureAwait(true);
-                    }
-                    catch
-                    {
-                        // CrSDK 未部署 DLL 时 Dispose 内仍可能触发 P/Invoke；忽略二次异常
-                    }
-                }
-
-                var debug = SonyCrBridgeNative.TryGetLastConnectDebugUtf8();
-                if (!string.IsNullOrWhiteSpace(debug))
-                    StatusMessage = (ex is OperationCanceledException ? "连接已取消。" : ex.Message) + $"（Connect调试：{debug}）";
-                else
-                    StatusMessage = ex is OperationCanceledException ? "连接已取消。" : ex.Message;
-                return false;
-            }
-
-            _connectingSession = null;
-            _session = session;
-            IsSessionActive = true;
-            ConnectedCameraModelName = NormalizeCameraModelName(session.ConnectedCameraModel);
-            _liveViewSyncFromSession = true;
-            LiveViewEnabled = true;
-            _liveViewSyncFromSession = false;
-            LiveViewEnabledControlEnabled = true;
-            IsConnecting = false;
-
-            try
-            {
-                UpdateShootingPollForSession();
-            }
-            catch (Exception ex)
-            {
-                StatusMessage = "连接后初始化失败: " + ex.Message;
-                await ShutdownCameraSessionAsync().ConfigureAwait(true);
-                return false;
-            }
-
-            try
-            {
-                await _session.ApplyCameraSaveSettingsAsync(
-                        SaveDirectory,
-                        FileNamePrefix,
-                        IndexToFileType(CaptureFormatIndex))
-                    .ConfigureAwait(true);
-                StatusMessage = "已连接相机，并已应用保存目录与格式。";
-            }
-            catch (Exception ex)
-            {
-                StatusMessage = "已连接相机，但应用保存设置失败: " + ex.Message;
-            }
-
-            try
-            {
-                await _session.StartPreviewAsync().ConfigureAwait(true);
-            }
-            catch (Exception ex)
-            {
-                StatusMessage = "已连接相机，但启动实时预览失败: " + ex.Message;
-                await ShutdownCameraSessionAsync().ConfigureAwait(true);
-                return false;
-            }
-
-            // 连接成功但长时间收不到首帧时，给出 bridge 侧诊断，便于定位（例如 LiveView 未开启/防火墙/机身状态）。
-            _ = Task.Run(
-                async () =>
-                {
-                    await Task.Delay(2000).ConfigureAwait(false);
-                    if (!IsSessionActive || PreviewImage != null)
-                        return;
-                    var dbg = SonyCrBridgeNative.TryGetLastLiveViewDebugUtf8();
-                    if (!string.IsNullOrWhiteSpace(dbg))
-                    {
-                        // InvokeAsync 返回 DispatcherOperation<T>，不支持 ConfigureAwait。
-                        await Dispatcher.UIThread.InvokeAsync(() =>
-                            StatusMessage =
-                                "已连接相机，但 2 秒内未收到取景帧。多半是机身 LiveView 尚未启用/尚未就绪，请稍等或检查相机端「遥控拍摄/实时取景」相关设置。"
-                                + $"（LiveView调试：{dbg}）");
-                    }
-                });
-
-            return true;
-        }
-        finally
-        {
-            if (IsConnecting)
-                IsConnecting = false;
-            try
-            {
-                _connectCts?.Dispose();
-            }
-            catch
-            {
-            }
-
-            _connectCts = null;
-        }
-    }
-
-    /// <summary>停止拍摄轮询、断开并释放相机会话（关窗口与「断开」共用）。</summary>
-    private async Task ShutdownCameraSessionAsync()
+    internal async Task PrepareCameraShutdownInternalAsync()
     {
         await StopTimelapseInternalAsync().ConfigureAwait(true);
         await ReleaseAnyShutterHalfPressAsync().ConfigureAwait(true);
-
         StopShootingPoll();
-        if (_session == null)
-            return;
-
-        _session.FrameReceived -= OnFrameReceived;
-        var sessionToDispose = _session;
-        _session = null;
-
-        try
-        {
-            await sessionToDispose.DisposeAsync().ConfigureAwait(false);
-        }
-        catch
-        {
-            // 断开时 native 已释放；忽略二次异常以免闪退
-        }
-
-        // 先置空 _session，避免 UI 队列中滞后的预览帧再次写入；再清空绑定位图（须在 UI 线程）。
-        await Dispatcher.UIThread.InvokeAsync(() =>
-        {
-            ClearPreview();
-            IsSessionActive = false;
-            ConnectedCameraModelName = "未知";
-            ConnectedCameraLensModelName = "暂未识别";
-            ConnectedCameraBatteryLevelText = "暂未识别";
-            SdCardUsageDebugText = "";
-        });
     }
 
     [RelayCommand]
-    private async Task Disconnect()
-    {
-        try
-        {
-            if (_session == null)
-            {
-                ClearPreview();
-                return;
-            }
-
-            await ShutdownCameraSessionAsync().ConfigureAwait(true);
-            StatusMessage = "已断开。";
-        }
-        catch (Exception ex)
-        {
-            // 断开过程中出现异常时，保持应用不崩溃，并尽力恢复到“未连接”状态。
-            try
-            {
-                await Dispatcher.UIThread.InvokeAsync(() =>
-                {
-                    ClearPreview();
-                    IsSessionActive = false;
-                    ConnectedCameraModelName = "未知";
-                    ConnectedCameraLensModelName = "暂未识别";
-                    ConnectedCameraBatteryLevelText = "暂未识别";
-                    SdCardUsageDebugText = "";
-                });
-            }
-            catch
-            {
-            }
-
-            StatusMessage = "断开连接失败（已尽力清理本地状态）: " + ex.Message;
-        }
-    }
-
-    private static string NormalizeCameraModelName(string? raw)
-    {
-        if (string.IsNullOrWhiteSpace(raw))
-            return "未知";
-        var s = raw.Trim();
-        var nul = s.IndexOf('\0');
-        if (nul >= 0)
-            s = s[..nul];
-        Span<char> buffer = stackalloc char[s.Length];
-        var n = 0;
-        foreach (var ch in s)
-        {
-            if (!char.IsControl(ch))
-                buffer[n++] = ch;
-        }
-        var normalized = new string(buffer[..n]).Trim();
-        return string.IsNullOrWhiteSpace(normalized) ? "未知" : normalized;
-    }
+    private Task Disconnect() => _cameraOps.DisconnectAsync();
 
     /// <summary>
     /// 刷新“SD 卡容量/使用量估算”进度条数据（给「格式化 SD 卡」浮窗展示）。
     /// </summary>
-    public async Task RefreshSdCardUsageAsync(bool force = false)
-    {
-        if (!IsSessionActive || _session == null)
-            return;
-
-        if (_sdCardUsageRefreshInFlight && !force)
-            return;
-
-        _sdCardUsageRefreshInFlight = true;
-
-        try
-        {
-            CancellationTokenSource? old = null;
-            lock (this)
-            {
-                old = _sdCardUsageRefreshCts;
-                _sdCardUsageRefreshCts = new CancellationTokenSource();
-            }
-            old?.Cancel();
-            old?.Dispose();
-
-            var token = _sdCardUsageRefreshCts?.Token ?? CancellationToken.None;
-
-            // UI 侧先清空以避免误导（取到新值后再更新）。
-            await Dispatcher.UIThread.InvokeAsync(() =>
-            {
-                SdCardSlot1HasCard = false;
-                SdCardSlot1SummaryText = "加载中…";
-                SdCardSlot1UsagePercent = 0;
-
-                SdCardSlot2HasCard = false;
-                SdCardSlot2SummaryText = "加载中…";
-                SdCardSlot2UsagePercent = 0;
-                SdCardUsageDebugText = "诊断：读取中…";
-            });
-
-            var usage = await _session.TryGetSdCardUsageEstimateAsync(token).ConfigureAwait(false);
-            var debugText = _session.TryGetSdCardUsageDebugText();
-            if (!IsSessionActive)
-                return;
-            if (usage == null)
-            {
-                StatusMessage = "获取 SD 卡容量失败：桥接未返回结果（可能是旧版 DLL 或会话瞬断）。";
-                await Dispatcher.UIThread.InvokeAsync(() =>
-                {
-                    SdCardUsageDebugText = string.IsNullOrWhiteSpace(debugText)
-                        ? "诊断：桥接未返回调试文本（可能仍在使用旧版 DLL）。"
-                        : $"诊断：{debugText}";
-                });
-                return;
-            }
-
-            static string FormatStorageHuman(ulong bytes)
-            {
-                const double kb = 1024d;
-                const double mb = 1024d * 1024d;
-                const double gb = 1024d * 1024d * 1024d;
-                if (bytes >= (ulong)gb)
-                    return $"{(bytes / gb):0.0}GB";
-                if (bytes >= (ulong)mb)
-                    return $"{(bytes / mb):0.0}MB";
-                if (bytes >= (ulong)kb)
-                    return $"{(bytes / kb):0.0}KB";
-                return $"{bytes}B";
-            }
-
-            static double Clamp0to100(double v) => Math.Max(0, Math.Min(100, v));
-            static int TryReadDiagInt(string? dbg, string key)
-            {
-                if (string.IsNullOrWhiteSpace(dbg) || string.IsNullOrWhiteSpace(key))
-                    return int.MinValue;
-                var marker = key + "=";
-                var idx = dbg.IndexOf(marker, StringComparison.Ordinal);
-                if (idx < 0)
-                    return int.MinValue;
-                idx += marker.Length;
-                var end = dbg.IndexOf(' ', idx);
-                var token = end >= idx ? dbg[idx..end] : dbg[idx..];
-                return int.TryParse(token, NumberStyles.Integer, CultureInfo.InvariantCulture, out var v)
-                    ? v
-                    : int.MinValue;
-            }
-
-            await Dispatcher.UIThread.InvokeAsync(() =>
-            {
-                if (usage.Value.Slot1HasCard)
-                {
-                    SdCardSlot1HasCard = true;
-                    var slot1ContentsEnable = TryReadDiagInt(debugText, "slot1_contents_enable");
-                    var slot1RemainingShots = TryReadDiagInt(debugText, "slot1_remaining");
-                    var percent = usage.Value.Slot1TotalBytes == 0
-                        ? 0
-                        : Clamp0to100(usage.Value.Slot1UsedBytes * 100d / usage.Value.Slot1TotalBytes);
-                    var slot1UsageUnavailable = slot1ContentsEnable == 0 && usage.Value.Slot1UsedBytes == 0;
-                    var slot1HasRemainingShots = slot1RemainingShots >= 0;
-
-                    SdCardSlot1UsagePercent = percent;
-                    SdCardSlot1ProgressBrush = slot1UsageUnavailable
-                        ? new SolidColorBrush(Color.Parse("#9CA3AF"))
-                        : percent > 80
-                            ? new SolidColorBrush(Color.Parse("#F59E0B"))
-                            : new SolidColorBrush(Color.Parse("#2FBF71"));
-                    SdCardSlot1SummaryText = slot1HasRemainingShots
-                        ? $"容量 {FormatStorageHuman(usage.Value.Slot1TotalBytes)}，剩余约 {slot1RemainingShots} 张"
-                        : $"容量 {FormatStorageHuman(usage.Value.Slot1TotalBytes)}，使用 {FormatStorageHuman(usage.Value.Slot1UsedBytes)} ({percent:0.0}%)";
-                }
-                else
-                {
-                    SdCardSlot1HasCard = false;
-                    SdCardSlot1SummaryText = "未插卡";
-                    SdCardSlot1UsagePercent = 0;
-                }
-
-                if (usage.Value.Slot2HasCard)
-                {
-                    SdCardSlot2HasCard = true;
-                    var slot2ContentsEnable = TryReadDiagInt(debugText, "slot2_contents_enable");
-                    var slot2RemainingShots = TryReadDiagInt(debugText, "slot2_remaining");
-                    var percent = usage.Value.Slot2TotalBytes == 0
-                        ? 0
-                        : Clamp0to100(usage.Value.Slot2UsedBytes * 100d / usage.Value.Slot2TotalBytes);
-                    var slot2UsageUnavailable = slot2ContentsEnable == 0 && usage.Value.Slot2UsedBytes == 0;
-                    var slot2HasRemainingShots = slot2RemainingShots >= 0;
-
-                    SdCardSlot2UsagePercent = percent;
-                    SdCardSlot2ProgressBrush = slot2UsageUnavailable
-                        ? new SolidColorBrush(Color.Parse("#9CA3AF"))
-                        : percent > 80
-                            ? new SolidColorBrush(Color.Parse("#F59E0B"))
-                            : new SolidColorBrush(Color.Parse("#2FBF71"));
-                    SdCardSlot2SummaryText = slot2HasRemainingShots
-                        ? $"容量 {FormatStorageHuman(usage.Value.Slot2TotalBytes)}，剩余约 {slot2RemainingShots} 张"
-                        : $"容量 {FormatStorageHuman(usage.Value.Slot2TotalBytes)}，使用 {FormatStorageHuman(usage.Value.Slot2UsedBytes)} ({percent:0.0}%)";
-                }
-                else
-                {
-                    SdCardSlot2HasCard = false;
-                    SdCardSlot2SummaryText = "未插卡";
-                    SdCardSlot2UsagePercent = 0;
-                }
-
-                SdCardUsageDebugText = string.IsNullOrWhiteSpace(debugText)
-                    ? "诊断：桥接未返回调试文本（可能仍在使用旧版 DLL）。"
-                    : $"诊断：{debugText}";
-            });
-        }
-        catch (OperationCanceledException)
-        {
-            // ignore
-        }
-        catch (Exception ex)
-        {
-            StatusMessage = "获取 SD 卡容量失败：" + ex.Message;
-        }
-        finally
-        {
-            _sdCardUsageRefreshInFlight = false;
-        }
-    }
+    public Task RefreshSdCardUsageAsync(bool force = false) =>
+        _cameraOps.RefreshSdCardUsageAsync(force);
 
     private bool CanFormatSdCard() => IsSessionActive && !_captureTaskActive && !IsConnecting;
 
@@ -2451,90 +2083,16 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
 
     /// <summary>格式化相机存储卡（SD 卡）。按官方 CrCommandId_MediaFormat：SLOT1=Up，SLOT2=Down。</summary>
     [RelayCommand(CanExecute = nameof(CanFormatSdCard))]
-    private async Task ConfirmFormatSdCard()
+    private Task ConfirmFormatSdCard() => _cameraOps.ConfirmFormatSdCardAsync();
+
+    /// <summary>断开连接或切回实时取景时清空预览与对焦点标记（预览位图所有权在 <see cref="MainWindowCameraOperations"/>）。</summary>
+    internal void ClearPreviewUi()
     {
-        if (_session == null)
-            return;
-
-        ShowFormatSdCardConfirm = false;
-        StatusMessage = "正在格式化 SD 卡（SLOT1/2），请稍候…";
-        try
-        {
-            var result = await _sdCardMediaFormat.FormatAllSlotsAsync().ConfigureAwait(true);
-            StatusMessage = result.PartialErrorText == null
-                ? "SD 卡格式化完成（如有需要请等待机身重建列表）。"
-                : "SD 卡格式化完成，但部分槽失败：" + result.PartialErrorText;
-        }
-        catch (Exception ex)
-        {
-            StatusMessage = "格式化 SD 卡失败: " + ex.Message;
-        }
-
-        // 格式化会清空内容；这里刷新一次进度条估算。
-        _ = RefreshSdCardUsageAsync(force: true);
-    }
-
-    private void OnFrameReceived(object? sender, Bitmap frame)
-    {
-        void Apply()
-        {
-            try
-            {
-                // 已断开但 Post 仍排队时：丢弃位图，避免重复 Dispose / 恢复已清空的预览。
-                if (_session == null)
-                {
-                    frame.Dispose();
-                    return;
-                }
-
-                _lastFrameOwner?.Dispose();
-                _lastFrameOwner = frame;
-                if (!IsViewingLiveMonitor)
-                    return;
-
-                PreviewImage = frame;
-                LuminanceHistogramBins = HistogramLuminance.ComputeNormalized(frame) ?? new double[256];
-                if (IsSessionActive && _session != null)
-                {
-                    var fj = _session.TryGetLiveViewFocusFramesJson();
-                    if (CrSdkLiveViewFocusFrameParser.TryParse(fj, out var list))
-                        SdkAfFocusFrames = list;
-                    else
-                        SdkAfFocusFrames = null;
-                }
-                else
-                    SdkAfFocusFrames = null;
-            }
-            catch
-            {
-                try
-                {
-                    if (ReferenceEquals(PreviewImage, frame))
-                        PreviewImage = null;
-                    if (ReferenceEquals(_lastFrameOwner, frame))
-                        _lastFrameOwner = null;
-                    frame.Dispose();
-                }
-                catch
-                {
-                }
-            }
-        }
-
-        if (Dispatcher.UIThread.CheckAccess())
-            Apply();
-        else
-            Dispatcher.UIThread.Post(Apply);
-    }
-
-    private void ClearPreview()
-    {
+        _cameraOps.ClearPreviewFrameOwnership();
         PreviewImage = null;
         StaticReviewImage = null;
         _staticReviewBitmap?.Dispose();
         _staticReviewBitmap = null;
-        _lastFrameOwner?.Dispose();
-        _lastFrameOwner = null;
         LuminanceHistogramBins = null;
         ViewingRecentPhotoPath = null;
         IsViewingLiveMonitor = true;
@@ -2549,7 +2107,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     {
         if (!IsViewingLiveMonitor)
             return;
-        if (_session == null || PreviewImage is not Bitmap bmp || !IsSessionActive)
+        if (_cameraOps.Session == null || PreviewImage is not Bitmap bmp || !IsSessionActive)
             return;
 
         if (!PreviewHitTest.TryGetNormalizedImageCoords(positionInBorder, borderSize, bmp.PixelSize, out var nx, out var ny))
@@ -2574,7 +2132,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
 
         try
         {
-            await _session!.RequestTouchAutofocusAsync(nx, ny).ConfigureAwait(true);
+            await _cameraOps.Session!.RequestTouchAutofocusAsync(nx, ny).ConfigureAwait(true);
             _touchAfAlreadySentForPendingPoint = true;
             StatusMessage =
                 $"已同步对焦点（约 {px}%×{py}%）；保持按住预览即半按对焦，松开即释放。";
@@ -2598,7 +2156,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         _previewFocusPointerDown = true;
         var epoch = ++_previewFocusEpoch;
         await OnPreviewTappedAsync(positionInBorder, borderSize).ConfigureAwait(true);
-        if (!IsSessionActive || _session == null)
+        if (!IsSessionActive || _cameraOps.Session == null)
             return;
         if (epoch != _previewFocusEpoch)
             return;
@@ -2619,25 +2177,14 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        ShutdownTrace.Write("MainWindowViewModel.DisposeAsync: begin");
         CancelFilmstripHostWidthUpdates();
         CancelRecentCaptureSyncAndSdRefresh();
 
-        _connectCts?.Cancel();
-        try
-        {
-            if (_connectingSession != null)
-            {
-                var s = _connectingSession;
-                _connectingSession = null;
-                s.FrameReceived -= OnFrameReceived;
-                await s.DisposeAsync().ConfigureAwait(false);
-            }
-        }
-        catch
-        {
-        }
-
-        await ShutdownCameraSessionAsync().ConfigureAwait(false);
+        // 保持 UI 线程：关断路径会改 VM 属性并 NotifyCanExecuteChanged，否则会触发 Avalonia VerifyAccess。
+        await _cameraOps.DisposeConnectingIfNeededAsync().ConfigureAwait(true);
+        await _cameraOps.ShutdownCameraSessionAsync().ConfigureAwait(true);
+        ShutdownTrace.Write("MainWindowViewModel.DisposeAsync: end");
     }
 
     private void CancelRecentCaptureSyncAndSdRefresh()
@@ -2653,15 +2200,6 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         _recentCaptureSyncCts?.Dispose();
         _recentCaptureSyncCts = null;
 
-        try
-        {
-            _sdCardUsageRefreshCts?.Cancel();
-        }
-        catch
-        {
-        }
-
-        _sdCardUsageRefreshCts?.Dispose();
-        _sdCardUsageRefreshCts = null;
+        _cameraOps.CancelSdCardUsageRefresh();
     }
 }

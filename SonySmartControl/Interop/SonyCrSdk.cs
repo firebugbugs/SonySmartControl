@@ -257,6 +257,12 @@ public static class SonyCrSdk
         if (setSavePathOk && !shouldForcePullForHeif)
             return;
 
+        // HEIF/RAW+HEIF：
+        // - SetSaveInfo 成功时，同步拉取会导致 UI 等待 + 相机端反复进入“导入影像”（切模式/重连尤甚）。
+        // - 原图补拉交由 ViewModel 的后台补拉逻辑处理（TryRepairHeifOriginalInBackgroundAsync）。
+        if (setSavePathOk && shouldForcePullForHeif)
+            return;
+
         var dir = NormalizeSaveDirectory(saveDirectory);
         var pullCount = (stillFileType == CrSdkFileType.RawJpeg || stillFileType == CrSdkFileType.RawHeif) ? 2 : 1;
         var pausedLiveView = false;
@@ -361,6 +367,7 @@ public static class SonyCrSdk
     {
         var requireCardCopyForPull = fileType is CrSdkFileType.Heif or CrSdkFileType.RawHeif;
         var ok = EnsureRemoteStillImageTransferToPc(saveDirectory, filePrefix, requireCardCopyForPull);
+        var remoteSaveLargeOk = TryApplyRemoteSaveImageSizeLarge();
         var transSizeOriginalOk = TryApplyStillImageTransferSizeOriginal();
         if (setFileTypeProperty)
         {
@@ -373,7 +380,7 @@ public static class SonyCrSdk
         lock (CaptureTransferDebugLock)
         {
             _lastCaptureTransferSetupDebug =
-                $"capture-setup setSaveInfo={(ok ? 1 : 0)} transSizeOriginal={(transSizeOriginalOk ? 1 : 0)} fileType={(int)fileType}";
+                $"capture-setup setSaveInfo={(ok ? 1 : 0)} remoteSaveLarge={(remoteSaveLargeOk ? 1 : 0)} transSizeOriginal={(transSizeOriginalOk ? 1 : 0)} fileType={(int)fileType}";
         }
         return ok;
     }
@@ -392,6 +399,19 @@ public static class SonyCrSdk
                    CrSdkDevicePropertyCodes.StillImageTransSize,
                    0,
                    CrSdkDataType.UInt16);
+    }
+
+    private static bool TryApplyRemoteSaveImageSizeLarge()
+    {
+        try
+        {
+            // 1=LargeSize；用于修复遥控保存落地 160x120 等小图。
+            return SonyCrBridgeNative.TrySetRemoteSaveImageSize(1);
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
     }
 
     /// <summary>
@@ -472,17 +492,17 @@ public static class SonyCrSdk
 
         if (requireCardCopyForPull)
         {
-            // 官方 contents transfer 流程依赖内容实际写入媒体；HEIF 机型直传常给小图，因此优先要求“写卡”。
+            // HEIF 场景优先 PC+卡：配合 RemoteSaveImageSize_LargeSize 可避免“只落地小图(160x120)”。
             if (!TrySetDevicePropertyUInt16(
                     CrSdkDevicePropertyCodes.StillImageStoreDestination,
                     (ushort)CrSdkStillImageStoreDestination.HostPCAndMemoryCard) &&
                 !TrySetDevicePropertyUInt16(
                     CrSdkDevicePropertyCodes.StillImageStoreDestination,
-                    (ushort)CrSdkStillImageStoreDestination.MemoryCard))
+                    (ushort)CrSdkStillImageStoreDestination.HostPC))
             {
                 throw new InvalidOperationException(
-                    "HEIF 原图拉取需要机身写入存储卡，但当前无法设置保存目标为“PC+存储卡”或“仅存储卡”。"
-                    + " 请在机身菜单中开启允许写卡/遥控拍摄后重试。");
+                    "无法将「静态影像保存目标」设为电脑（HostPC 或 PC+存储卡）。"
+                    + " 请在相机菜单中确认「遥控拍摄」下允许保存到电脑，或解除相关锁定后再试。");
             }
         }
         else

@@ -12,18 +12,13 @@ public static class CameraDeviceDiscovery
 {
     public static IReadOnlyList<DiscoveredCameraDevice> Discover()
     {
-        var st = SonyCrBridgeNative.SonyCr_Init();
-        if (st != (int)SonyCrStatus.Ok)
-            throw new InvalidOperationException($"{nameof(SonyCrBridgeNative.SonyCr_Init)} 失败: {(SonyCrStatus)st} ({st})");
+        EnsureSdkReady();
 
         try
         {
-            st = SonyCrBridgeNative.SonyCr_EnumCameraDevicesRefresh();
-            if (st != (int)SonyCrStatus.Ok)
-                throw new InvalidOperationException(
-                    $"{nameof(SonyCrBridgeNative.SonyCr_EnumCameraDevicesRefresh)} 失败: {(SonyCrStatus)st} ({st})");
+            RefreshEnumWithRecovery();
 
-            st = SonyCrBridgeNative.SonyCr_GetCameraDeviceCount(out var count);
+            var st = SonyCrBridgeNative.SonyCr_GetCameraDeviceCount(out var count);
             if (st != (int)SonyCrStatus.Ok)
                 throw new InvalidOperationException(
                     $"{nameof(SonyCrBridgeNative.SonyCr_GetCameraDeviceCount)} 失败: {(SonyCrStatus)st} ({st})");
@@ -52,7 +47,39 @@ public static class CameraDeviceDiscovery
         }
         finally
         {
-            SonyCrBridgeNative.TryReleaseSdk();
+            // 不在“设备搜索”阶段立即 Release SDK：
+            // 某些机型/固件在 Wi-Fi 配对场景会依赖同进程内的 SDK 上下文缓存来复用已配对信息，
+            // 若每次搜索后都 Release，再连接时可能被机身当作“新会话”而重复要求配对。
+            // 真正的断开与释放由会话层在应用生命周期结束时统一处理。
         }
+    }
+
+    private static void EnsureSdkReady()
+    {
+        var st = SonyCrBridgeNative.SonyCr_Init();
+        if (st != (int)SonyCrStatus.Ok)
+            throw new InvalidOperationException($"{nameof(SonyCrBridgeNative.SonyCr_Init)} 失败: {(SonyCrStatus)st} ({st})");
+    }
+
+    private static void RefreshEnumWithRecovery()
+    {
+        var st = SonyCrBridgeNative.SonyCr_EnumCameraDevicesRefresh();
+        if (st == (int)SonyCrStatus.Ok)
+            return;
+
+        if (st != (int)SonyCrStatus.ErrEnumFailed)
+            throw new InvalidOperationException(
+                $"{nameof(SonyCrBridgeNative.SonyCr_EnumCameraDevicesRefresh)} 失败: {(SonyCrStatus)st} ({st})");
+
+        // 某些机型在“连接->断开”后会留下 SDK 内部枚举状态，首次刷新可能返回 -3。
+        // 做一次 SDK 级重置后重试，避免用户必须重启应用才能再次连接。
+        SonyCrBridgeNative.TryDisconnect();
+        SonyCrBridgeNative.TryReleaseSdk();
+
+        EnsureSdkReady();
+        st = SonyCrBridgeNative.SonyCr_EnumCameraDevicesRefresh();
+        if (st != (int)SonyCrStatus.Ok)
+            throw new InvalidOperationException(
+                $"{nameof(SonyCrBridgeNative.SonyCr_EnumCameraDevicesRefresh)} 重试失败: {(SonyCrStatus)st} ({st})");
     }
 }

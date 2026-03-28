@@ -45,6 +45,31 @@ public partial class MainWindowViewModel
     /// <summary>查看历史照片时持有解码位图，切回实时时释放。</summary>
     private Bitmap? _staticReviewBitmap;
 
+    /// <summary>静态回看区无图时的提示文本（例如不支持的格式）。</summary>
+    [ObservableProperty]
+    private string? _staticReviewHint;
+
+    public bool IsStaticReviewHintVisible =>
+        !IsViewingLiveMonitor
+        && StaticReviewImage == null
+        && !string.IsNullOrWhiteSpace(StaticReviewHint);
+
+    private static readonly string[] HeifLikeExtensions = [".hif", ".heif", ".heic"];
+
+    private static bool IsHeifLikePath(string path)
+    {
+        var ext = Path.GetExtension(path);
+        if (string.IsNullOrWhiteSpace(ext))
+            return false;
+        ext = ext.ToLowerInvariant();
+        foreach (var e in HeifLikeExtensions)
+        {
+            if (ext == e)
+                return true;
+        }
+        return false;
+    }
+
     partial void OnViewingRecentPhotoPathChanged(string? value)
     {
         foreach (var e in RecentPhotos)
@@ -59,7 +84,10 @@ public partial class MainWindowViewModel
         OnPropertyChanged(nameof(IsGuideOverlayVisible));
         OnPropertyChanged(nameof(IsLivePreviewVisible));
         OnPropertyChanged(nameof(IsStaticReviewVisible));
+        OnPropertyChanged(nameof(IsStaticReviewHintVisible));
     }
+
+    partial void OnStaticReviewHintChanged(string? value) => OnPropertyChanged(nameof(IsStaticReviewHintVisible));
 
     /// <summary>从当前保存目录按修改时间取最近若干张图，重建底部列表（启动、更换目录时调用）。</summary>
     private void RefreshRecentGalleryFromDisk()
@@ -273,15 +301,15 @@ public partial class MainWindowViewModel
         StaticReviewImage = null;
         ViewingRecentPhotoPath = null;
         IsViewingLiveMonitor = true;
-        PreviewImage = _lastFrameOwner;
-        if (_lastFrameOwner != null)
-            LuminanceHistogramBins = HistogramLuminance.ComputeNormalized(_lastFrameOwner) ?? new double[256];
+        PreviewImage = _cameraOps.LastPreviewFrameOwner;
+        if (_cameraOps.LastPreviewFrameOwner != null)
+            LuminanceHistogramBins = HistogramLuminance.ComputeNormalized(_cameraOps.LastPreviewFrameOwner) ?? new double[256];
         else
             LuminanceHistogramBins = null;
 
-        if (IsSessionActive && _session != null)
+        if (IsSessionActive && _cameraOps.Session != null)
         {
-            var fj = _session.TryGetLiveViewFocusFramesJson();
+            var fj = _cameraOps.Session.TryGetLiveViewFocusFramesJson();
             if (CrSdkLiveViewFocusFrameParser.TryParse(fj, out var list))
                 SdkAfFocusFrames = list;
             else
@@ -313,6 +341,18 @@ public partial class MainWindowViewModel
             _staticReviewBitmap = null;
 
             StaticReviewImage = entry?.Thumbnail;
+            StaticReviewHint = null;
+
+            if (IsHeifLikePath(path))
+            {
+                // 用户点击 HEIF：明确提示不支持解码，不触发任何系统解码器/外部弹窗。
+                _staticReviewBitmap?.Dispose();
+                _staticReviewBitmap = null;
+                StaticReviewImage = null;
+                StaticReviewHint = "本程序不提供 HEIF 解码。\n\n建议：\n- 在相机内将格式切换为 JPEG；或\n- 使用外部看图软件查看该 HEIF 文件。";
+                StatusMessage = "HEIF 不支持解码（仅支持 JPEG/PNG 等）。";
+                return;
+            }
 
             var targetPath = path;
             var bmp = await DiskImagePreviewLoader.LoadFullAsync(targetPath).ConfigureAwait(true);
@@ -338,6 +378,8 @@ public partial class MainWindowViewModel
 
             _staticReviewBitmap = bmp;
             StaticReviewImage = bmp;
+            StatusMessage = $"已打开：{Path.GetFileName(targetPath)} · {bmp.PixelSize.Width}×{bmp.PixelSize.Height}px";
+            OnPropertyChanged(nameof(IsStaticReviewHintVisible));
         }
         catch (OperationCanceledException)
         {

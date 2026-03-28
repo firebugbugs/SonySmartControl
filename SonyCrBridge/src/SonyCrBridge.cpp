@@ -1510,8 +1510,13 @@ SONY_CR_API SonyCrStatus SonyCr_ConnectRemoteByIndex(int index)
         g_connectedInfo->Release();
         g_connectedInfo = nullptr;
     }
+    // 先优先保留枚举对象语义（GUID/配对上下文更完整），以便复用“已配对主机”实现直连。
+    // 仅在后续尝试失败时再回退到 CreateCameraObjectInfoEthernetConnection。
     g_connectedInfo = CloneCameraObjectInfoForConnect(infoConst);
     auto* connectInfo = g_connectedInfo ? g_connectedInfo : info;
+    ICrCameraObjectInfo* connectInfoIpFallback = nullptr;
+    if (isIp)
+        connectInfoIpFallback = CreateIpCameraObjectForConnect(infoConst);
 
     std::string fingerprint;
     const char* fpPtr = nullptr;
@@ -1522,42 +1527,60 @@ SONY_CR_API SonyCrStatus SonyCr_ConnectRemoteByIndex(int index)
         fpLen = static_cast<CrInt32u>(fingerprint.size());
     }
 
-    // IP 连接失败时，很多机型不会弹出配对 UI。这里按“多策略”尝试不同参数组合，并记录诊断信息。
+    const bool sshOn = (infoConst->GetSSHsupport() == SCRSDK::CrSSHsupport_ON);
+    const char* userId = sshOn ? "admin" : nullptr;
+    const char* userPassword = sshOn ? "" : nullptr;
+
+    // 连接策略：
+    // 1) 先尝试“复用已配对”：不带 pairingDisplayName + reconnect=ON（更接近官方“配对一次后直连”）。
+    // 2) 再尝试带 pairingDisplayName 发起/恢复配对。
+    // 3) 若仍失败，才切换到 IP 重建对象重试。
     struct Attempt
     {
+        bool useIpRebuiltInfo;
         CrReconnectingSet reconnect;
         bool useFingerprint;
         bool usePairingName;
     };
     const Attempt attempts[] =
     {
-        // 先完全对齐 RemoteCli：不传 pairingDisplayName
-        { CrReconnecting_ON,  true,  false },
-        { CrReconnecting_OFF, true,  false },
-        { CrReconnecting_ON,  false, false },
-        { CrReconnecting_OFF, false, false },
-        // 再尝试传 pairingDisplayName（部分机型/固件会显示“配对设备名”）
-        { CrReconnecting_ON,  true,  true  },
-        { CrReconnecting_OFF, true,  true  },
-        { CrReconnecting_ON,  false, true  },
-        { CrReconnecting_OFF, false, true  },
+        // A. 先用枚举对象（复用既有配对）
+        { false, CrReconnecting_ON,  true,  false },
+        { false, CrReconnecting_ON,  false, false },
+        // B. 再带 pairingDisplayName（允许机身走配对确认）
+        { false, CrReconnecting_ON,  true,  true  },
+        { false, CrReconnecting_ON,  false, true  },
+        { false, CrReconnecting_OFF, true,  false },
+        { false, CrReconnecting_OFF, false, false },
+        { false, CrReconnecting_OFF, true,  true  },
+        { false, CrReconnecting_OFF, false, true  },
+        // C. 最后才用 IP 重建对象兜底
+        { true,  CrReconnecting_ON,  true,  false },
+        { true,  CrReconnecting_ON,  false, false },
+        { true,  CrReconnecting_ON,  true,  true  },
+        { true,  CrReconnecting_ON,  false, true  },
+        { true,  CrReconnecting_OFF, true,  false },
+        { true,  CrReconnecting_OFF, false, false },
+        { true,  CrReconnecting_OFF, true,  true  },
+        { true,  CrReconnecting_OFF, false, true  },
     };
 
     CrError err = SCRSDK::CrError_None;
     bool ok = false;
     for (const auto& a : attempts)
     {
+        auto* infoTry = (a.useIpRebuiltInfo && connectInfoIpFallback) ? connectInfoIpFallback : connectInfo;
         const char* fpTry = a.useFingerprint ? fpPtr : nullptr;
         const CrInt32u fpLenTry = a.useFingerprint ? fpLen : 0;
         const CrInt16u* pdnTry = (isIp && a.usePairingName) ? pairingDisplayName : nullptr;
         err = Connect(
-            connectInfo,
+            infoTry,
             &g_callback,
             &g_deviceHandle,
             CrSdkControlMode_Remote,
             a.reconnect,
-            "admin",
-            "",
+            userId,
+            userPassword,
             fpTry,
             fpLenTry,
             pdnTry);
@@ -1576,13 +1599,17 @@ SONY_CR_API SonyCrStatus SonyCr_ConnectRemoteByIndex(int index)
         dbg += " conn=" + connType;
         dbg += " ssh=" + std::to_string(static_cast<unsigned>(infoConst->GetSSHsupport()));
         dbg += " auth=" + std::to_string(static_cast<unsigned>(infoConst->GetAuthenticationState()));
+        dbg += " pairNec=" + CrUtf16ToUtf8(reinterpret_cast<const CrInt16u*>(infoConst->GetPairingNecessity()));
         dbg += " fpLen=" + std::to_string(static_cast<unsigned>(fpLen));
         dbg += " pdn=" + std::to_string(static_cast<unsigned>(isIp ? 1 : 0));
+        dbg += " ipFallback=" + std::to_string(static_cast<unsigned>(connectInfoIpFallback ? 1 : 0));
         dbg += " err=" + std::to_string(static_cast<int>(err));
         dbg += " cbErr=" + std::to_string(static_cast<unsigned>(g_callback.lastError.load()));
         dbg += " h=" + std::to_string(static_cast<long long>(g_deviceHandle));
         SetLastConnectDebug(std::move(dbg));
     }
+    if (connectInfoIpFallback)
+        connectInfoIpFallback->Release();
 
     if (!ok)
         return ToConnectStatus(err);
@@ -1646,8 +1673,14 @@ SONY_CR_API SonyCrStatus SonyCr_LiveView_GetLastJpeg(unsigned char* buffer, int 
     CrError propsErr = SCRSDK::CrError_None;
     CrError infoErr = SCRSDK::CrError_None;
     CrError imageErr = SCRSDK::CrError_None;
+    CrError pkErr = SCRSDK::CrError_None;
+    CrError lvEnableErr = SCRSDK::CrError_None;
     int infoRetry = 0;
     CrInt32u outBytes = 0;
+
+    // 部分机型在“未将优先键设为 PC Remote”时会拒绝 LiveView/控制请求。
+    // 若失败不直接返回：继续走后续流程并在调试字段中上报错误码，便于定位机身菜单状态。
+    pkErr = SetPriorityKeyPcRemote(g_deviceHandle);
 
     CrLiveViewProperty* props = nullptr;
     CrInt32 num = 0;
@@ -1676,7 +1709,7 @@ SONY_CR_API SonyCrStatus SonyCr_LiveView_GetLastJpeg(unsigned char* buffer, int 
         if (err == CrError_Api_InvalidCalled)
         {
             // 尝试主动启用并短暂重试（避免 UI 侧一直白屏却没有真实原因）。
-            (void)SetDeviceSetting(g_deviceHandle, Setting_Key_EnableLiveView, 1);
+            lvEnableErr = SetDeviceSetting(g_deviceHandle, Setting_Key_EnableLiveView, 1);
             for (int i = 0; i < 6; i++)
             {
                 infoRetry++;
@@ -1731,6 +1764,8 @@ SONY_CR_API SonyCrStatus SonyCr_LiveView_GetLastJpeg(unsigned char* buffer, int 
 FinishDebug:
     {
         std::string dbg = "lv:";
+        dbg += " pk=" + std::to_string(static_cast<int>(pkErr));
+        dbg += " lvEn=" + std::to_string(static_cast<int>(lvEnableErr));
         dbg += " props=" + std::to_string(static_cast<int>(propsErr));
         dbg += " info=" + std::to_string(static_cast<int>(infoErr));
         dbg += " infoRetry=" + std::to_string(infoRetry);
@@ -2003,6 +2038,14 @@ SONY_CR_API SonyCrStatus SonyCr_HalfPressShutterS1Press(void)
         // Live View 等可能在两次 Set 之间抢锁；短延迟后重试一次，减轻 ErrControlFailed(-8)。
         std::this_thread::sleep_for(std::chrono::milliseconds(120));
         err = SCRSDK::SetDeviceProperty(g_deviceHandle, &prop);
+        if (CR_FAILED(err))
+        {
+            // 仍失败：再尝试“短暂停止 LiveView → 重试 → 恢复”，降低 Busy/ControlFailed(-8) 概率。
+            (void)SetDeviceSetting(g_deviceHandle, Setting_Key_EnableLiveView, 0);
+            std::this_thread::sleep_for(std::chrono::milliseconds(160));
+            err = SCRSDK::SetDeviceProperty(g_deviceHandle, &prop);
+            (void)SetDeviceSetting(g_deviceHandle, Setting_Key_EnableLiveView, 1);
+        }
     }
     return CR_FAILED(err) ? SONY_CR_ERR_CONTROL_FAILED : SONY_CR_OK;
 #endif
@@ -2120,6 +2163,30 @@ SONY_CR_API SonyCrStatus SonyCr_SetDeviceSetting(unsigned int key, unsigned int 
     if (g_deviceHandle == 0 || !g_callback.connected.load())
         return SONY_CR_ERR_NOT_CONNECTED;
     const CrError err = SCRSDK::SetDeviceSetting(g_deviceHandle, static_cast<CrInt32u>(key), static_cast<CrInt32u>(value));
+    AddUploadBytes(8);
+    return CR_FAILED(err) ? SONY_CR_ERR_CONTROL_FAILED : SONY_CR_OK;
+#endif
+}
+
+SONY_CR_API SonyCrStatus SonyCr_SetRemoteSaveImageSize(unsigned int value)
+{
+#if SONY_CR_BRIDGE_STUB
+    (void)value;
+    return SONY_CR_ERR_SDK_NOT_LINKED;
+#else
+    // CrDeviceProperty_RemoteSaveImageSize / CrRemoteSaveImageSize（Large=1, Small=2）
+    if (value < 1 || value > 2)
+        return SONY_CR_ERR_INVALID_PARAM;
+
+    std::lock_guard lock(g_mutex);
+    if (g_deviceHandle == 0 || !g_callback.connected.load())
+        return SONY_CR_ERR_NOT_CONNECTED;
+
+    SCRSDK::CrDeviceProperty prop;
+    prop.SetCode(SCRSDK::CrDevicePropertyCode::CrDeviceProperty_RemoteSaveImageSize);
+    prop.SetCurrentValue(static_cast<CrInt64u>(value));
+    prop.SetValueType(SCRSDK::CrDataType::CrDataType_UInt8);
+    const CrError err = SCRSDK::SetDeviceProperty(g_deviceHandle, &prop);
     AddUploadBytes(8);
     return CR_FAILED(err) ? SONY_CR_ERR_CONTROL_FAILED : SONY_CR_OK;
 #endif
@@ -2790,7 +2857,8 @@ static void AbandonRemoteTransferPromise(std::promise<void>* p)
 
 static CrError WaitRemoteTransferFuture(std::future<void>& fut, std::promise<void>* p)
 {
-    const std::future_status st = fut.wait_for(std::chrono::minutes(3));
+    // 避免 RemoteTransfer 卡死导致上层“拍照卡住”。超时后放弃等待，让上层决定是否后台补拉/重试。
+    const std::future_status st = fut.wait_for(std::chrono::seconds(25));
     if (st != std::future_status::ready)
     {
         AbandonRemoteTransferPromise(p);
@@ -3218,8 +3286,97 @@ SONY_CR_API SonyCrStatus SonyCr_PullLatestStillsToFolderUtf16(const unsigned sho
     std::string dbg = "capture-pull begin";
     dbg += " pullCount=" + std::to_string(pullCount);
 
-    // 优先 Remote Transfer：按 contentId/fileId 拉原始文件。
-    // 实测部分机型在 HEIF 单文件场景下，MTP PullContentsFile 可能只给到低分辨率图；此处先走 Remote Transfer 更稳。
+    std::vector<SCRSDK::CrContentHandle> pullHandles;
+    pullHandles.reserve(static_cast<size_t>(nPull));
+
+    auto tryPullViaMtp = [&](int maxWaitAttempts) -> bool
+    {
+        for (int attempt = 0; attempt < maxWaitAttempts; ++attempt)
+        {
+            if (attempt > 0)
+                std::this_thread::sleep_for(std::chrono::milliseconds(180));
+
+            pullHandles.clear();
+
+            {
+                std::lock_guard lock(g_mutex);
+                if (g_deviceHandle == 0 || !g_callback.connected.load())
+                    return false;
+
+                SCRSDK::CrMtpFolderInfo* f_list = nullptr;
+                CrInt32u f_nums = 0;
+                CrError err = SCRSDK::GetDateFolderList(g_deviceHandle, &f_list, &f_nums);
+                if (CR_FAILED(err) || f_nums == 0 || f_list == nullptr)
+                {
+                    if (f_list != nullptr)
+                        SCRSDK::ReleaseDateFolderList(g_deviceHandle, f_list);
+                    continue;
+                }
+
+                const SCRSDK::CrMtpFolderInfo& folder = f_list[f_nums - 1];
+
+                SCRSDK::CrContentHandle* c_list = nullptr;
+                CrInt32u c_nums = 0;
+                err = SCRSDK::GetContentsHandleList(g_deviceHandle, folder.handle, &c_list, &c_nums);
+                if (CR_FAILED(err) || c_nums == 0 || c_list == nullptr)
+                {
+                    SCRSDK::ReleaseDateFolderList(g_deviceHandle, f_list);
+                    if (c_list != nullptr)
+                        SCRSDK::ReleaseContentsHandleList(g_deviceHandle, c_list);
+                    continue;
+                }
+
+                if (c_nums < nPull)
+                {
+                    SCRSDK::ReleaseContentsHandleList(g_deviceHandle, c_list);
+                    SCRSDK::ReleaseDateFolderList(g_deviceHandle, f_list);
+                    continue;
+                }
+
+                const CrInt32u start = c_nums - nPull;
+                for (CrInt32u i = start; i < c_nums; ++i)
+                    pullHandles.push_back(c_list[i]);
+
+                SCRSDK::ReleaseContentsHandleList(g_deviceHandle, c_list);
+                SCRSDK::ReleaseDateFolderList(g_deviceHandle, f_list);
+            }
+
+            if (pullHandles.size() != static_cast<size_t>(nPull))
+                continue;
+
+            CrInt32u okCount = 0;
+            for (size_t idx = 0; idx < pullHandles.size(); ++idx)
+            {
+                if (idx > 0)
+                    std::this_thread::sleep_for(std::chrono::milliseconds(240));
+                const CrError e = PullContentsFileWithRetry(pullHandles[idx], destPath);
+                if (!CR_FAILED(e))
+                    ++okCount;
+            }
+
+            if (okCount > 0)
+            {
+                dbg += " mode=mtp ok";
+                dbg += " okCount=" + std::to_string(static_cast<unsigned>(okCount));
+                dbg += " " + TryGetLatestFileSummaryInFolder(destPath);
+                return true;
+            }
+        }
+        return false;
+    };
+
+    // 失败快速返回：上层会决定是否继续后台补偿，不在这里长时间阻塞。
+    if (tryPullViaMtp(5))
+    {
+        std::lock_guard<std::mutex> lk(g_capturePullDebugMutex);
+        g_lastCapturePullDebug = std::move(dbg);
+        return SONY_CR_OK;
+    }
+
+    dbg += " mode=mtp fail";
+
+    // MTP/ContentsTransfer 失败后再尝试 RemoteTransfer。
+    // 官方 RemoteTransferMode 以 CrSdkControlMode_RemoteTransfer 连接后再 GetRemoteTransferContentsDataFile 拉取。
     if (TryPullLatestStillsViaRemoteTransfer(destPath, pullCount))
     {
         dbg += " mode=remote ok";
@@ -3230,86 +3387,41 @@ SONY_CR_API SonyCrStatus SonyCr_PullLatestStillsToFolderUtf16(const unsigned sho
     }
     dbg += " mode=remote fail";
 
-    std::vector<SCRSDK::CrContentHandle> pullHandles;
-    pullHandles.reserve(static_cast<size_t>(nPull));
-
-    // 失败快速返回：上层会决定是否继续后台补偿，不在这里长时间阻塞。
-    constexpr int kMaxWaitAttempts = 5;
-    for (int attempt = 0; attempt < kMaxWaitAttempts; ++attempt)
+    // 某些机型在 Remote 模式下调用 MTP/ContentsTransfer 接口会持续失败；切换到 ContentsTransfer 再拉一次。
+    bool switchedToContentsTransfer = false;
     {
-        if (attempt > 0)
-            std::this_thread::sleep_for(std::chrono::milliseconds(120));
-
-        pullHandles.clear();
-
+        std::lock_guard lock(g_mutex);
+        switchedToContentsTransfer = ReconnectByIndexWithModeUnlocked(0, CrSdkControlMode_ContentsTransfer, false);
+    }
+    if (switchedToContentsTransfer)
+    {
+        dbg += " modeSwitch=toContentsTransfer";
+        std::this_thread::sleep_for(std::chrono::milliseconds(220));
+        if (tryPullViaMtp(6))
         {
-            std::lock_guard lock(g_mutex);
-            if (g_deviceHandle == 0 || !g_callback.connected.load())
-                return SONY_CR_ERR_NOT_CONNECTED;
-
-            SCRSDK::CrMtpFolderInfo* f_list = nullptr;
-            CrInt32u f_nums = 0;
-            CrError err = SCRSDK::GetDateFolderList(g_deviceHandle, &f_list, &f_nums);
-            if (CR_FAILED(err) || f_nums == 0 || f_list == nullptr)
+            dbg += " mode=contentsTransferSession ok";
+            bool backRemoteOk = false;
             {
-                if (f_list != nullptr)
-                    SCRSDK::ReleaseDateFolderList(g_deviceHandle, f_list);
-                continue;
+                std::lock_guard lock(g_mutex);
+                backRemoteOk = ReconnectByIndexWithModeUnlocked(0, CrSdkControlMode_Remote, true);
             }
-
-            const SCRSDK::CrMtpFolderInfo& folder = f_list[f_nums - 1];
-
-            SCRSDK::CrContentHandle* c_list = nullptr;
-            CrInt32u c_nums = 0;
-            err = SCRSDK::GetContentsHandleList(g_deviceHandle, folder.handle, &c_list, &c_nums);
-            if (CR_FAILED(err) || c_nums == 0 || c_list == nullptr)
-            {
-                SCRSDK::ReleaseDateFolderList(g_deviceHandle, f_list);
-                if (c_list != nullptr)
-                    SCRSDK::ReleaseContentsHandleList(g_deviceHandle, c_list);
-                continue;
-            }
-
-            if (c_nums < nPull)
-            {
-                SCRSDK::ReleaseContentsHandleList(g_deviceHandle, c_list);
-                SCRSDK::ReleaseDateFolderList(g_deviceHandle, f_list);
-                continue;
-            }
-
-            const CrInt32u start = c_nums - nPull;
-            for (CrInt32u i = start; i < c_nums; ++i)
-                pullHandles.push_back(c_list[i]);
-
-            SCRSDK::ReleaseContentsHandleList(g_deviceHandle, c_list);
-            SCRSDK::ReleaseDateFolderList(g_deviceHandle, f_list);
-        }
-
-        if (pullHandles.size() != static_cast<size_t>(nPull))
-            continue;
-
-        CrInt32u okCount = 0;
-        for (size_t idx = 0; idx < pullHandles.size(); ++idx)
-        {
-            if (idx > 0)
-                std::this_thread::sleep_for(std::chrono::milliseconds(220));
-            const CrError e = PullContentsFileWithRetry(pullHandles[idx], destPath);
-            if (!CR_FAILED(e))
-                ++okCount;
-        }
-
-        if (okCount > 0)
-        {
-            dbg += " mode=mtp ok";
-            dbg += " okCount=" + std::to_string(static_cast<unsigned>(okCount));
-            dbg += " " + TryGetLatestFileSummaryInFolder(destPath);
+            dbg += backRemoteOk ? " backRemote=ok" : " backRemote=fail";
             std::lock_guard<std::mutex> lk(g_capturePullDebugMutex);
             g_lastCapturePullDebug = std::move(dbg);
             return SONY_CR_OK;
         }
+        dbg += " mode=contentsTransferSession fail";
+        bool backRemoteOk = false;
+        {
+            std::lock_guard lock(g_mutex);
+            backRemoteOk = ReconnectByIndexWithModeUnlocked(0, CrSdkControlMode_Remote, true);
+        }
+        dbg += backRemoteOk ? " backRemote=ok" : " backRemote=fail";
     }
-
-    dbg += " mode=mtp fail";
+    else
+    {
+        dbg += " modeSwitch=toContentsTransfer-fail";
+    }
 
     // 官方 sample_RemoteTransferMode 使用 CrSdkControlMode_RemoteTransfer 进行内容拉取。
     // 某些机型在 Remote 模式下会持续 ErrControlFailed(-8)；这里失败后自动切换模式重试一次，再切回 Remote。
